@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live SDR 3D Visualization</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: monospace;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            font-family: monospace;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h2>Live SDR 3D Visualization</h2>
+        <div id="stats">Connection: Waiting...</div>
+    </div>
+    <div id="controls">
+        <label for="pointSize">Point Size: </label>
+        <input type="range" id="pointSize" min="0.1" max="5" step="0.1" value="1">
+        <label for="rotationSpeed">Rotation Speed: </label>
+        <input type="range" id="rotationSpeed" min="0" max="0.01" step="0.0005" value="0.002">
+    </div>
+    <!-- Use non-module script to avoid ES module import issues -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
