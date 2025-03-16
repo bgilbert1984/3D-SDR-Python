@@ -90,10 +90,18 @@ function connectWebSocket() {
         reconnectAttempts = 0;
     };
     
-    socket.onmessage = (event) => {
+    socket.onmessage = async (event) => {
         try {
             // Parse the incoming data
-            const rawData = event.data;
+            let rawData = event.data;
+            if (rawData instanceof Blob) {
+                // Handle Blob data
+                rawData = await new Response(rawData).text();
+            } else if (rawData instanceof ArrayBuffer) {
+                // Handle ArrayBuffer data
+                rawData = new TextDecoder().decode(rawData);
+            }
+            // At this point rawData should be a string
             const data = JSON.parse(rawData.replace(/'/g, '"')); // Convert Python single quotes to JSON double quotes
             
             const freqs = data.freqs;
