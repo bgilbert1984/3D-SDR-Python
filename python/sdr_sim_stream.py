@@ -4,7 +4,7 @@ import websockets
 import time
 import json
 
-# WebSocket Port
+# WebSocket Ports
 WS_PORT = 8765
 
 async def sdr_simulator(websocket):
