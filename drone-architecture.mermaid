@@ -1,0 +1,58 @@
+flowchart TB
+    subgraph "Drone Swarm"
+        D1[Drone 1\nRTL-SDR + GPS + Jetson] 
+        D2[Drone 2\nRTL-SDR + GPS + Jetson]
+        D3[Drone 3\nRTL-SDR + GPS + Jetson]
+    end
+    
+    subgraph "Communication Layer"
+        ML[4G/LTE Mesh Network]
+        SL[Starlink Backup]
+    end
+    
+    subgraph "Ground Station"
+        WS[WebSocket Server]
+        DB[(MongoDB)]
+        AI[AI Processing Engine]
+        GEO[Geolocation Engine]
+        ML1[Signal Classifier]
+        ML2[Pursuit Predictor]
+        MAV[MAVLink Controller]
+    end
+    
+    subgraph "Frontend"
+        C3D[CesiumJS 3D Globe]
+        SDR[SDR Visualization]
+        MAP[Violation Mapping]
+        FP[Flight Planner]
+    end
+    
+    D1 --> ML
+    D2 --> ML
+    D3 --> ML
+    ML --> WS
+    SL -.-> WS
+    
+    WS --> DB
+    WS --> AI
+    
+    AI --> ML1
+    AI --> ML2
+    AI --> GEO
+    
+    ML1 --> MAV
+    ML2 --> MAV
+    GEO --> MAV
+    
+    MAV --> ML
+    
+    DB --> C3D
+    GEO --> C3D
+    ML1 --> SDR
+    GEO --> MAP
+    MAV --> FP
+    
+    C3D --> UI[User Interface]
+    SDR --> UI
+    MAP --> UI
+    FP --> UI
