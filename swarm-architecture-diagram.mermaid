@@ -1,0 +1,92 @@
+flowchart TD
+    subgraph "AI Core"
+        AI1[Signal Classifier\nModel]
+        AI2[Movement Predictor\nLSTM]
+        AI3[Collision Avoidance\nSystem]
+    end
+    
+    subgraph "Drone Swarm"
+        DSC[Drone Swarm\nController]
+        
+        subgraph "Swarm Roles"
+            LDR[Lead Pursuer]
+            TRI[Triangulation Drones]
+            BKP[Backup Drones]
+            SCT[Scout Drones]
+        end
+        
+        subgraph "Coordination System"
+            LE[Leader Election]
+            RA[Role Assignment]
+            FP[Formation Positioning]
+            CAD[Collision Avoidance\nDecision System]
+        end
+    end
+    
+    subgraph "SDR Processing"
+        RSP[RSSI Processing]
+        TDP[TDoA Processing]
+        TRG[Triangulation\nEngine]
+        LOC[Geolocation System]
+    end
+    
+    subgraph "Communication Layer"
+        WS[WebSocket Server]
+        MS[Message System]
+        CL[Command Link]
+        TL[Telemetry Link]
+    end
+    
+    subgraph "Visualization"
+        CJS[CesiumJS]
+        CDV[Collision Detection\nVisualization]
+        RTV[Real-time\nTracking]
+        SVZ[Safe Zone\nVisualization]
+    end
+    
+    %% Connections
+    AI1 --> DSC
+    AI2 --> DSC
+    AI3 --> DSC
+    
+    DSC --> LDR
+    DSC --> TRI
+    DSC --> BKP
+    DSC --> SCT
+    
+    DSC --> LE
+    LE --> RA
+    RA --> FP
+    DSC --> CAD
+    
+    RSP --> TRG
+    TDP --> TRG
+    TRG --> LOC
+    
+    DSC <--> WS
+    WS <--> MS
+    MS <--> CL
+    MS <--> TL
+    
+    WS <--> CJS
+    CJS --> CDV
+    CJS --> RTV
+    CJS --> SVZ
+    
+    %% Major data flows
+    LOC --> DSC
+    CAD --> FP
+    TL --> RTV
+    DSC --> WS
+    
+    %% Collision avoidance information flow
+    CAD --> CDV
+    CDV --> SVZ
+
+    style AI3 fill:#FF9999,stroke:#FF0000,stroke-width:2px
+    style CAD fill:#FF9999,stroke:#FF0000,stroke-width:2px
+    style CDV fill:#FF9999,stroke:#FF0000,stroke-width:2px
+    style SVZ fill:#FF9999,stroke:#FF0000,stroke-width:2px
+    
+    classDef roleNode fill:#99CCFF,stroke:#3366CC,stroke-width:2px
+    class LDR,TRI,BKP,SCT roleNode
