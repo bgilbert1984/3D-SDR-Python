@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDR FCC Violation Geolocation</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+        
+        #main {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #sidebar {
+            width: 300px;
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px;
+            overflow-y: auto;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        
+        #map-container {
+            flex-grow: 1;
+            position: relative;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        h1 {
+            font-size: 18px;
+            margin-top: 0;
+            color: #3498db;
+        }
+        
+        h2 {
+            font-size: 16px;
+            margin-top: 20px;
+            border-bottom: 1px solid #3498db;
+            padding-bottom: 5px;
+        }
+        
+        #connection-status {
+            padding: 8px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .connected {
+            background-color: #27ae60;
+        }
+        
+        .disconnected {
+            background-color: #e74c3c;
+        }
+        
+        .trying {
+            background-color: #f39c12;
+        }
+        
+        .signal-item {
+            background-color: #34495e;
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+        
+        .signal-legal {
+            border-left-color: #2ecc71;
+        }
+        
+        .signal-violation {
+            border-left-color: #e74c3c;
+            animation: pulse 2s infinite;
+        }
+        
+        .signal-unknown {
+            border-left-color: #f39c12;
+        }
+        
+        .signal-freq {
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .signal-details {
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        .coordinates {
+            font-family: monospace;
+            color: #bdc3c7;
+        }
+        
+        .confidence {
+            display: inline-block;
+            height: 6px;
+            background-color: #3498db;
+            margin-top: 3px;
+            border-radius: 3px;
+        }
+        
+        .modulation {
+            display: inline-block;
+            padding: 2px 6px;
+            background-color: #7f8c8d;
+            border-radius: 3px;
+            margin-right: 4px;
+            font-size: 10px;
+        }
+        
+        #receivers-list {
+            margin-bottom: 15px;
+        }
+        
+        .receiver {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            background-color: #34495e;
+            margin: 4px 0;
+            border-radius: 4px;
+        }
+        
+        .receiver-status {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        
+        .receiver-active {
+            background-color: #2ecc71;
+        }
+        
+        .receiver-inactive {
+            background-color: #e74c3c;
+        }
+        
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 0 6px rgba(231, 76, 60, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+            }
+        }
+        
+        /* Custom marker styles */
+        .receiver-marker {
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+            width: 12px !important;
+            height: 12px !important;
+            margin-left: -6px !important;
+            margin-top: -6px !important;
+        }
+        
+        .signal-marker {
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+            width: 16px !important;
+            height: 16px !important;
+            margin-left: -8px !important;
+            margin-top: -8px !important;
+        }
+        
+        .violation-marker {
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 8px rgba(231, 76, 60, 0.8);
+            width: 20px !important;
+            height: 20px !important;
+            margin-left: -10px !important;
+            margin-top: -10px !important;
+            animation: pulse-marker 2s infinite;
+        }
+        
+        .transmitter-marker {
+            background-color: #9b59b6;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+            width: 16px !important;
+            height: 16px !important;
+            margin-left: -8px !important;
+            margin-top: -8px !important;
+        }
+        
+        /* Uncertainty circle */
+        .uncertainty-circle {
+            stroke: rgba(52, 152, 219, 0.4);
+            stroke-width: 1;
+            fill: rgba(52, 152, 219, 0.1);
+        }
+        
+        .violation-circle {
+            stroke: rgba(231, 76, 60, 0.6);
+            stroke-width: 2;
+            fill: rgba(231, 76, 60, 0.2);
+            animation: pulse-circle 2s infinite;
+        }
+        
+        @keyframes pulse-marker {
+            0% {
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.8);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(231, 76, 60, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+            }
+        }
+        
+        @keyframes pulse-circle {
+            0% {
+                stroke-opacity: 0.6;
+                fill-opacity: 0.2;
+            }
+            50% {
+                stroke-opacity: 0.3;
+                fill-opacity: 0.1;
+            }
+            100% {
+                stroke-opacity: 0.6;
+                fill-opacity: 0.2;
+            }
+        }
+        
+        .popup-content {
+            font-size: 12px;
+        }
+        
+        .popup-content h3 {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+        }
+        
+        .popup-content table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .popup-content th,
+        .popup-content td {
+            padding: 3px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .popup-content th {
+            color: #7f8c8d;
+            font-weight: normal;
+        }
+    </style>
+</head>
+<body>
+    <div id="main">
+        <div id="sidebar">
+            <h1>SDR FCC Violation Geolocation</h1>
+            
+            <div id="connection-status" class="disconnected">
+                Disconnected
+            </div>
+            
+            <h2>Receivers</h2>
+            <div id="receivers-list">
+                <div class="receiver">
+                    <div class="receiver-info">Loading receivers...</div>
+                </div>
+            </div>
+            
+            <h2>Signals</h2>
+            <div id="signals-list"></div>
+            
+            <h2>Violations</h2>
+            <div id="violations-list"></div>
+        </div>
+        
+        <div id="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        // Map setup
+        const map = L.map('map').setView([37.7749, -122.4194], 11); // Default to San Francisco
+        
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        
+        // Create layer groups
+        const receiversLayer = L.layerGroup().addTo(map);
+        const signalsLayer = L.layerGroup().addTo(map);
+        const violationsLayer = L.layerGroup().addTo(map);
+        const uncertaintyLayer = L.layerGroup().addTo(map);
+        
+        // Store receivers and signals by ID/frequency
+        const receivers = {};
+        const signals = {};
+        const violations = {};
+        
+        // WebSocket connection
+        let socket;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 10;
+        const connectionStatusEl = document.getElementById('connection-status');
+        
+        // Colors for different modulation types
+        const modulationColors = {
+            'AM': '#00AAFF',    // Light blue
+            'FM': '#00FF00',    // Green
+            'SSB': '#FFAA00',   // Orange
+            'CW': '#FFFF00',    // Yellow
+            'PSK': '#FF00FF',   // Magenta
+            'FSK': '#00FFAA',   // Turquoise
+            'NOISE': '#666666', // Gray
+            'UNKNOWN': '#CCCCCC' // Light gray
+        };
+        
+        // Connect to WebSocket server
+        function connectWebSocket() {
+            connectionStatusEl.className = 'trying';
+            connectionStatusEl.textContent = 'Connecting...';
+            
+            socket = new WebSocket('ws://localhost:8080');
+            
+            socket.onopen = () => {
+                connectionStatusEl.className = 'connected';
+                connectionStatusEl.textContent = 'Connected';
+                reconnectAttempts = 0;
+            };
+            
+            socket.onmessage = async (event) => {
+                try {
+                    // Parse the incoming data
+                    let rawData = event.data;
+                    if (rawData instanceof Blob) {
+                        // Handle Blob data
+                        rawData = await new Response(rawData).text();
+                    } else if (rawData instanceof ArrayBuffer) {
+                        // Handle ArrayBuffer data
+                        rawData = new TextDecoder().decode(rawData);
+                    }
+                    
+                    // At this point rawData should be a string
+                    // Convert Python single quotes to JSON double quotes if needed
+                    if (rawData.indexOf("'") !== -1) {
+                        rawData = rawData.replace(/'/g, '"');
+                    }
+                    
+                    const data = JSON.parse(rawData);
+                    
+                    // Check if it's a status message
+                    if (data.type === 'status') {
+                        handleStatusUpdate(data);
+                        return;
+                    }
+                    
+                    // Handle normal data
+                    updateFromData(data);
+                    
+                } catch (error) {
+                    console.error('Error processing data:', error);
+                }
+            };
+            
+            socket.onclose = () => {
+                connectionStatusEl.className = 'disconnected';
+                connectionStatusEl.textContent = 'Disconnected';
+                
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    connectionStatusEl.textContent = `Reconnecting (${reconnectAttempts}/${maxReconnectAttempts})...`;
+                    setTimeout(connectWebSocket, 2000);
+                } else {
+                    connectionStatusEl.textContent = 'Connection failed';
+                }
+            };
+            
+            socket.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                connectionStatusEl.className = 'disconnected';
+                connectionStatusEl.textContent = 'Connection error';
+            };
+        }
+        
+        // Handle status update
+        function handleStatusUpdate(data) {
+            if (data.status === 'connected') {
+                connectionStatusEl.className = 'connected';
+                connectionStatusEl.textContent = 'Connected';
+            } else if (data.status === 'disconnected') {
+                connectionStatusEl.className = 'disconnected';
+                connectionStatusEl.textContent = 'SDR Disconnected';
+            } else if (data.status === 'error') {
+                connectionStatusEl.className = 'disconnected';
+                connectionStatusEl.textContent = 'SDR Error';
+            }
+        }
+        
+        // Update UI with received data
+        function updateFromData(data) {
+            // Get receiver information if available
+            const receiverId = data.receiver_id || 'unknown';
+            
+            // Update receivers (in a real implementation, you'd get this from the server)
+            updateReceivers(data);
+            
+            // Update signal list
+            updateSignals(data.signals || []);
+            
+            // Update violations list
+            updateViolations(data.violations || []);
+            
+            // Update geolocation markers
+            updateGeolocation(data.geolocation_results || []);
+        }
+        
+        // Update receivers display and map
+        function updateReceivers(data) {
+            // In a complete implementation, receiver information would come from the server
+            // For this example, we'll use hardcoded receivers
+            if (Object.keys(receivers).length === 0) {
+                // Hardcoded receivers for example (would normally come from server)
+                const defaultReceivers = [
+                    {
+                        id: 'main',
+                        latitude: 37.7749,
+                        longitude: -122.4194,
+                        altitude: 0.0,
+                        active: true,
+                        name: 'Main Station'
+                    },
+                    {
+                        id: 'remote1',
+                        latitude: 37.8044,
+                        longitude: -122.2712,
+                        altitude: 0.0,
+                        active: true,
+                        name: 'Oakland'
+                    },
+                    {
+                        id: 'remote2',
+                        latitude: 37.5630,
+                        longitude: -122.3255,
+                        altitude: 0.0,
+                        active: true,
+                        name: 'San Mateo'
+                    },
+                    {
+                        id: 'remote3',
+                        latitude: 37.8716,
+                        longitude: -122.2727,
+                        altitude: 0.0,
+                        active: true,
+                        name: 'Berkeley'
+                    }
+                ];
+                
+                // Add receivers to the map
+                defaultReceivers.forEach(receiver => {
+                    receivers[receiver.id] = receiver;
+                    addReceiverToMap(receiver);
+                });
+                
+                // Show receivers on the list
+                updateReceiversList();
+                
+                // Auto-zoom the map to show all receivers
+                const bounds = Object.values(receivers).reduce((bounds, receiver) => {
+                    bounds.extend([receiver.latitude, receiver.longitude]);
+                    return bounds;
+                }, L.latLngBounds());
+                
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+        }
+        
+        // Add a receiver marker to the map
+        function addReceiverToMap(receiver) {
+            // Create custom marker
+            const markerHtml = `<div class="receiver-marker" style="background-color: #3498db;"></div>`;
+            const icon = L.divIcon({ html: markerHtml, className: 'custom-marker' });
+            
+            // Create marker
+            const marker = L.marker([receiver.latitude, receiver.longitude], { icon })
+                .addTo(receiversLayer);
+            
+            // Add popup with info
+            marker.bindPopup(`
+                <div class="popup-content">
+                    <h3>Receiver: ${receiver.name || receiver.id}</h3>
+                    <table>
+                        <tr>
+                            <th>ID:</th>
+                            <td>${receiver.id}</td>
+                        </tr>
+                        <tr>
+                            <th>Status:</th>
+                            <td>${receiver.active ? 'Active' : 'Inactive'}</td>
+                        </tr>
+                        <tr>
+                            <th>Coordinates:</th>
+                            <td>${receiver.latitude.toFixed(6)}, ${receiver.longitude.toFixed(6)}</td>
+                        </tr>
+                    </table>
+                </div>
+            `);
+            
+            // Store marker reference
+            receiver.marker = marker;
+        }
+        
+        // Update receivers list in the sidebar
+        function updateReceiversList() {
+            const receiversListEl = document.getElementById('receivers-list');
+            receiversListEl.innerHTML = '';
+            
+            Object.values(receivers).forEach(receiver => {
+                const receiverEl = document.createElement('div');
+                receiverEl.className = 'receiver';
+                
+                const statusClass = receiver.active ? 'receiver-active' : 'receiver-inactive';
+                
+                receiverEl.innerHTML = `
+                    <div class="receiver-info">
+                        <span class="receiver-status ${statusClass}"></span>
+                        ${receiver.name || receiver.id}
+                    </div>
+                    <div class="coordinates">
+                        ${receiver.latitude.toFixed(4)}, ${receiver.longitude.toFixed(4)}
+                    </div>
+                `;
+                
+                receiversListEl.appendChild(receiverEl);
+            });
+        }
+        
+        // Update signals display
+        function updateSignals(signalsList) {
+            const signalsListEl = document.getElementById('signals-list');
+            
+            // Clear previous signals
+            signalsListEl.innerHTML = '';
+            
+            if (signalsList.length === 0) {
+                signalsListEl.innerHTML = '<div class="signal-item">No signals detected</div>';
+                return;
+            }
+            
+            // Sort by frequency
+            signalsList.sort((a, b) => a.frequency_mhz - b.frequency_mhz);
+            
+            // Add signals to list
+            signalsList.forEach(signal => {
+                // Store signal in memory
+                signals[signal.frequency_mhz.toFixed(3)] = signal;
+                
+                const signalEl = document.createElement('div');
+                signalEl.className = signal.matched ? 'signal-item signal-legal' : 'signal-item signal-unknown';
+                
+                const modColor = modulationColors[signal.modulation] || '#CCCCCC';
+                
+                signalEl.innerHTML = `
+                    <div class="signal-freq">
+                        ${signal.frequency_mhz.toFixed(3)} MHz
+                        <span class="modulation" style="background-color: ${modColor}">${signal.modulation}</span>
+                    </div>
+                    <div class="signal-details">
+                        ${signal.matched ? 
+                            `Identified: ${signal.station || 'Unknown'} (${signal.country || '?'})` : 
+                            'Unidentified signal'}
+                    </div>
+                    <div class="signal-details">
+                        Power: ${(signal.power * 100).toFixed(1)}%
+                        <div class="confidence" style="width: ${signal.confidence * 100}%"></div>
+                    </div>
+                `;
+                
+                signalsListEl.appendChild(signalEl);
+            });
+        }
+        
+        // Update violations display
+        function updateViolations(violationsList) {
+            const violationsListEl = document.getElementById('violations-list');
+            
+            // Clear previous violations
+            violationsListEl.innerHTML = '';
+            
+            if (violationsList.length === 0) {
+                violationsListEl.innerHTML = '<div class="signal-item">No violations detected</div>';
+                return;
+            }
+            
+            // Sort by frequency
+            violationsList.sort((a, b) => a.frequency_mhz - b.frequency_mhz);
+            
+            // Add violations to list
+            violationsList.forEach(violation => {
+                // Store violation in memory
+                violations[violation.frequency_mhz.toFixed(3)] = violation;
+                
+                const violationEl = document.createElement('div');
+                violationEl.className = 'signal-item signal-violation';
+                
+                const modColor = modulationColors[violation.modulation] || '#CCCCCC';
+                
+                violationEl.innerHTML = `
+                    <div class="signal-freq">
+                        ${violation.frequency_mhz.toFixed(3)} MHz
+                        <span class="modulation" style="background-color: ${modColor}">${violation.modulation}</span>
+                    </div>
+                    <div class="signal-details">
+                        Unauthorized Transmission
+                    </div>
+                    <div class="signal-details">
+                        Power: ${(violation.power * 100).toFixed(1)}%
+                        <div class="confidence" style="width: ${violation.confidence * 100}%"></div>
+                    </div>
+                `;
+                
+                violationsListEl.appendChild(violationEl);
+            });
+        }
+        
+        // Update geolocation markers
+        function updateGeolocation(geoResults) {
+            // Clear previous markers
+            signalsLayer.clearLayers();
+            violationsLayer.clearLayers();
+            uncertaintyLayer.clearLayers();
+            
+            // Add new markers
+            geoResults.forEach(result => {
+                // Skip if no coordinates
+                if (!result.latitude || !result.longitude) {
+                    // Handle single receiver estimate (uncertainty circle)
+                    if (result.method === 'single_receiver' && result.possible_locations) {
+                        addUncertaintyCircle(result);
+                    }
+                    return;
+                }
+                
+                // Get frequency as string for lookup
+                const freqKey = result.frequency_mhz.toFixed(3);
+                
+                // Check if this is a violation
+                const isViolation = violations[freqKey] ? true : false;
+                
+                // Determine marker color based on modulation
+                const modulation = result.modulation || 'UNKNOWN';
+                const color = modulationColors[modulation] || '#CCCCCC';
+                
+                // Create custom marker
+                const markerHtml = `<div class="${isViolation ? 'violation-marker' : 'signal-marker'}" style="background-color: ${color};"></div>`;
+                const icon = L.divIcon({ html: markerHtml, className: 'custom-marker' });
+                
+                // Create marker
+                const marker = L.marker([result.latitude, result.longitude], { icon })
+                    .addTo(isViolation ? violationsLayer : signalsLayer);
+                
+                // Compile popup content
+                let popupContent = `
+                    <div class="popup-content">
+                        <h3>${result.frequency_mhz.toFixed(3)} MHz ${isViolation ? '(VIOLATION)' : ''}</h3>
+                        <table>
+                            <tr>
+                                <th>Type:</th>
+                                <td>${modulation}</td>
+                            </tr>
+                            <tr>
+                                <th>Method:</th>
+                                <td>${result.method.toUpperCase()}</td>
+                            </tr>
+                            <tr>
+                                <th>Receivers:</th>
+                                <td>${result.receiver_count || 1}</td>
+                            </tr>
+                            <tr>
+                                <th>Coordinates:</th>
+                                <td>${result.latitude.toFixed(6)}, ${result.longitude.toFixed(6)}</td>
+                            </tr>
+                        </table>
+                    </div>
+                `;
+                
+                // Add popup
+                marker.bindPopup(popupContent);
+                
+                // Add uncertainty circle for TDoA/RSSI methods
+                if (result.method === 'tdoa' || result.method === 'rssi') {
+                    // Add an uncertainty circle (larger for RSSI which is less accurate)
+                    const radius = result.method === 'rssi' ? 750 : 250;
+                    
+                    const circle = L.circle([result.latitude, result.longitude], {
+                        radius: radius,
+                        className: isViolation ? 'violation-circle' : 'uncertainty-circle'
+                    }).addTo(uncertaintyLayer);
+                }
+            });
+        }
+        
+        // Add uncertainty circle for single receiver estimate
+        function addUncertaintyCircle(result) {
+            if (!result.possible_locations || result.possible_locations.length === 0) {
+                return;
+            }
+            
+            // Get receiver coordinates
+            const receiver = receivers[result.single_receiver_id];
+            if (!receiver) return;
+            
+            // Create a polygon from possible locations
+            const points = result.possible_locations.map(loc => [loc.latitude, loc.longitude]);
+            
+            // Determine if this is a violation
+            const freqKey = result.frequency_mhz.toFixed(3);
+            const isViolation = violations[freqKey] ? true : false;
+            
+            // Create the polygon
+            const polygon = L.polygon(points, {
+                className: isViolation ? 'violation-circle' : 'uncertainty-circle',
+                fillOpacity: 0.2,
+                weight: 1
+            }).addTo(uncertaintyLayer);
+            
+            // Add popup
+            polygon.bindPopup(`
+                <div class="popup-content">
+                    <h3>${result.frequency_mhz.toFixed(3)} MHz - Possible Location</h3>
+                    <p>Single receiver estimate from ${result.single_receiver_id}</p>
+                    <p>Multiple receivers needed for accurate location</p>
+                </div>
+            `);
+        }
+        
+        // Start WebSocket connection
+        connectWebSocket();
+        
+        // Add a test transmitter marker for demonstration
+        function addTestTransmitters() {
+            // Berkeley
+            const tx1 = L.marker([37.8716, -122.2727], {
+                icon: L.divIcon({
+                    html: '<div class="transmitter-marker"></div>',
+                    className: 'custom-marker'
+                })
+            }).addTo(map).bindPopup('Test Transmitter');
+            
+            // San Francisco
+            const tx2 = L.marker([37.7749, -122.4194], {
+                icon: L.divIcon({
+                    html: '<div class="transmitter-marker"></div>',
+                    className: 'custom-marker'
+                })
+            }).addTo(map).bindPopup('Test Transmitter 2');
+        }
+        
+        // For testing without WebSocket data
+        // setTimeout(addTestTransmitters, 1000);
+    </script>
+</body>
+</html>
