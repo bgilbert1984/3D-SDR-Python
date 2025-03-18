@@ -10,6 +10,7 @@ from haversine import haversine
 from dronekit import connect, VehicleMode, LocationGlobalRelative
 import tensorflow as tf
 from pymavlink import mavutil
+from gnuradio import osmosdr
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -503,6 +504,29 @@ class DroneSDRController:
         while True:
             await self.send_status_update()
             await asyncio.sleep(1)
+
+    def detect_all_sdr_devices(self):
+        """Discover all available SDR devices across multiple APIs"""
+        devices = []
+        
+        # Detect RTL-SDR devices via osmosdr
+        for i in range(10):
+            try:
+                src = osmosdr.source(args=f"rtl={i}")
+                devices.append({
+                    "type": "rtl-sdr", 
+                    "index": i,
+                    "name": f"RTL-SDR #{i}",
+                    "sample_rate_range": [0.25e6, 3.2e6]
+                })
+                del src
+            except Exception as e:
+                if "Failed to open" in str(e):
+                    break
+        
+        # Add other SDR APIs detection here
+        
+        return devices
 
 async def main():
     """Entry point for the drone controller"""

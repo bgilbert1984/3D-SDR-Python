@@ -277,6 +277,41 @@
             color: #7f8c8d;
             font-weight: normal;
         }
+        
+        .control-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        .websdr-controls {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+        }
+        .control-row {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+        }
+        .control-row label {
+            margin-right: 10px;
+            min-width: 100px;
+        }
+        .websdr-status {
+            color: #aaa;
+            font-size: 0.9em;
+            margin: 5px 0;
+        }
+        .websdr-info {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -304,6 +339,45 @@
         
         <div id="map-container">
             <div id="map"></div>
+        </div>
+    </div>
+    
+    <div id="controls" class="control-panel">
+        <h3>SDR Controls</h3>
+        <!-- Existing controls -->
+        <div class="websdr-controls">
+            <h3>WebSDR Controls</h3>
+            <div class="websdr-status">Status: Disconnected</div>
+            <div class="control-row">
+                <label for="websdr-band">Band:</label>
+                <select id="websdr-band">
+                    <option value="630m">630m (0.462-1.998 MHz)</option>
+                    <option value="80m">80m (3.126-5.174 MHz)</option>
+                    <option value="40m">40m (5.750-7.798 MHz)</option>
+                    <option value="20m" selected>20m (13.546-15.594 MHz)</option>
+                    <option value="10m">10m (26.711-28.759 MHz)</option>
+                    <option value="2m">2m (144.896-146.944 MHz)</option>
+                </select>
+            </div>
+            <div class="control-row">
+                <label for="websdr-freq">Frequency (kHz):</label>
+                <input type="number" id="websdr-freq" value="14200" step="1">
+                <button id="websdr-tune">Tune</button>
+            </div>
+            <div class="control-row">
+                <label for="websdr-mode">Mode:</label>
+                <select id="websdr-mode">
+                    <option value="am">AM</option>
+                    <option value="fm">FM</option>
+                    <option value="lsb">LSB</option>
+                    <option value="usb" selected>USB</option>
+                    <option value="cw">CW</option>
+                </select>
+            </div>
+            <div class="websdr-info">
+                <div>Source: KF5JMD WebSDR (Gatesville, TX)</div>
+                <div class="websdr-location">Location: EM11dk</div>
+            </div>
         </div>
     </div>
     
@@ -788,6 +862,13 @@
         
         // For testing without WebSocket data
         // setTimeout(addTestTransmitters, 1000);
+    </script>
+    <script src="websdr-frontend-integration.js"></script>
+    <script src="script.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initWebSDRIntegration();
+        });
     </script>
 </body>
 </html>

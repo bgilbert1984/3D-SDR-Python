@@ -3,3 +3,16 @@ uvicorn
 websockets
 pyrtlsdr
 numpy
+scipy
+haversine
+dronekit
+tensorflow
+pymavlink
+joblib
+selenium
+sounddevice
+requests
+gnuradio
+gr-osmosdr
+dataclasses
+typing-extensions
