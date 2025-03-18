@@ -29,6 +29,9 @@ except ImportError:
         'UNKNOWN': 'Unknown Modulation'
     }
 
+from sdr_geolocation import RemoteSDRHandler, SignalMeasurement
+from kiwisdr_client import KiwiSDRClient
+
 # Global configuration
 CONFIG = {
     'sdr': {
@@ -39,7 +42,7 @@ CONFIG = {
     },
     'websocket': {
         'host': '0.0.0.0',
-        'port': 8765,
+        'port': 8766,  # Changed from 8765 to avoid conflict
         'fosphor_port': 8090    # Port for Fosphor visualization
     },
     'visualization': {
@@ -49,7 +52,9 @@ CONFIG = {
         'colormap': 'viridis'
     },
     'eibi': {
-        'url': 'https://www.eibispace.de/dx/freq-a.txt',
+        # Updated URL to a more reliable source (if original is unavailable)
+        'url': 'https://www.eibispace.de/dx/sked-a.csv',
+        'backup_url': 'https://www.eibispace.de/dx/freq-a.txt',
         'refresh_hours': 24  # Refresh EIBI database every 24 hours
     },
     'mongodb': {
@@ -66,6 +71,18 @@ CONFIG = {
     },
     'classifier': {
         'model_path': 'signal_classifier_model.pkl'
+    },
+    'remote_sdr': {
+        'enabled': True,
+        'kiwisdr': {
+            'enabled': True,
+            'max_stations': 5,
+            'update_interval': 3600  # Update station list every hour
+        },
+        'websdr': {
+            'enabled': True,
+            'url': 'http://websdr.org/api'
+        }
     }
 }
 
@@ -109,30 +126,46 @@ def load_eibi_data(force_refresh=False):
             print(f"Error reading cache: {e}")
     
     print("Fetching fresh EIBI database...")
-    try:
-        response = requests.get(CONFIG['eibi']['url'], timeout=30)
-        
-        if response.status_code != 200:
-            print(f"Failed to retrieve EIBI data: HTTP {response.status_code}")
-            # Try to use cache even if expired
-            if os.path.exists(cache_file):
-                with open(cache_file, 'r') as f:
-                    return json.load(f).get('data', [])
-            return []
-        
-        eibi_data = []
-        for line in response.text.splitlines():
-            # EIBI format: freq(kHz);ITU;station;country;etc...
-            parts = line.split(';')
-            if len(parts) >= 5 and parts[0].strip().isdigit():
-                eibi_data.append({
-                    "frequency_kHz": float(parts[0]),
-                    "itu_code": parts[1],
-                    "station": parts[2],
-                    "country": parts[3],
-                    "mode": parts[4]
-                })
-        
+    
+    # Try primary URL first, fallback to backup if needed
+    urls_to_try = [CONFIG['eibi']['url'], CONFIG['eibi']['backup_url']]
+    eibi_data = []
+    
+    for url in urls_to_try:
+        try:
+            # Disable SSL verification for EIBI website
+            response = requests.get(
+                url,
+                timeout=30,
+                verify=False  # Disable SSL verification
+            )
+            
+            if response.status_code != 200:
+                print(f"Failed to retrieve EIBI data from {url}: HTTP {response.status_code}")
+                continue  # Try next URL
+            
+            for line in response.text.splitlines():
+                # EIBI format: freq(kHz);ITU;station;country;etc...
+                parts = line.split(';')
+                if len(parts) >= 5 and parts[0].strip().isdigit():
+                    eibi_data.append({
+                        "frequency_kHz": float(parts[0]),
+                        "itu_code": parts[1],
+                        "station": parts[2],
+                        "country": parts[3],
+                        "mode": parts[4]
+                    })
+            
+            # If we got data, break out of the loop
+            if eibi_data:
+                print(f"Successfully retrieved EIBI data from {url}")
+                break
+                
+        except Exception as e:
+            print(f"Error loading EIBI database from {url}: {e}")
+    
+    # If we got data from any URL, save to cache
+    if eibi_data:
         # Save to cache
         with open(cache_file, 'w') as f:
             json.dump({
@@ -142,16 +175,18 @@ def load_eibi_data(force_refresh=False):
         
         print(f"Loaded {len(eibi_data)} entries from EIBI database")
         return eibi_data
-    except Exception as e:
-        print(f"Error loading EIBI database: {e}")
-        # Try to use cache even if expired
-        if os.path.exists(cache_file):
-            try:
-                with open(cache_file, 'r') as f:
-                    return json.load(f).get('data', [])
-            except:
-                pass
-        return []
+    
+    # If all URLs failed, try to use expired cache
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r') as f:
+                print("Using expired EIBI cache as fallback")
+                return json.load(f).get('data', [])
+        except:
+            pass
+    
+    print("Warning: Could not retrieve EIBI data from any source")
+    return []
 
 # SDR Configuration
 def setup_sdr():
@@ -279,9 +314,14 @@ def setup_visualization_backend():
     """Set up the best available visualization backend"""
     try:
         # Try to import fosphor for GPU-accelerated visualization
-        import gr_fosphor
-        print("Using Fosphor for GPU-accelerated visualization")
-        return create_fosphor_backend()
+        import importlib.util
+        if importlib.util.find_spec("gr_fosphor"):
+            import gr_fosphor
+            print("Using Fosphor for GPU-accelerated visualization")
+            return create_fosphor_backend()
+        else:
+            print("Fosphor not available, falling back to standard visualization")
+            return create_standard_backend()
     except ImportError:
         print("Fosphor not available, falling back to standard visualization")
         return create_standard_backend()
@@ -393,7 +433,11 @@ async def sdr_stream_with_detection(websocket, path, eibi_db, classifier, collec
                 data["waterfall"] = waterfall_data.tolist()
             
             # Send to WebSocket
-            await websocket.send(json.dumps(data))
+            try:
+                await websocket.send(json.dumps(data))
+            except Exception as e:
+                print(f"Error sending data to WebSocket: {e}")
+                break
             
             # Output stats
             if violations:
@@ -587,6 +631,110 @@ def add_signal_component(samples, t, freq, amplitude, bandwidth_idx):
     samples += signal
     return samples
 
+class IntegratedDetector:
+    def __init__(self, config):
+        self.config = config
+        self.remote_handler = None
+
+    async def setup_remote_handler(self):
+        """Initialize remote SDR handler for KiwiSDR/WebSDR integration"""
+        if self.config['remote_sdr']['enabled']:
+            self.remote_handler = RemoteSDRHandler()
+            await self.remote_handler.__aenter__()
+            print("Initialized remote SDR handler")
+        
+    async def analyze_signal_with_network(self, frequency: float, signal_data: dict) -> dict:
+        """Analyze a signal using both local and network SDR data"""
+        result = signal_data.copy()
+        
+        if self.remote_handler and self.config['remote_sdr']['enabled']:
+            try:
+                # Get measurements from remote SDRs
+                remote_data = await self.remote_handler.fetch_data(frequency)
+                
+                if remote_data:
+                    # Add remote measurements
+                    result['remote_measurements'] = []
+                    total_power = 0
+                    station_count = 0
+                    
+                    for data in remote_data:
+                        measurement = data['measurement']
+                        result['remote_measurements'].append({
+                            'provider': data['provider'],
+                            'station_name': data['data'].get('station_name', 'unknown'),
+                            'power': measurement.power,
+                            'snr': measurement.snr,
+                            'timestamp': measurement.timestamp
+                        })
+                        total_power += measurement.power
+                        station_count += 1
+                    
+                    # Add network-wide statistics
+                    if station_count > 0:
+                        result['network_stats'] = {
+                            'average_power': total_power / station_count,
+                            'station_count': station_count,
+                            'detection_confidence': min(1.0, station_count / 3)  # Increases with more stations
+                        }
+                        
+                        # Increase violation confidence if multiple stations detect the signal
+                        if result.get('violation_confidence', 0) > 0:
+                            result['violation_confidence'] *= (1 + result['network_stats']['detection_confidence'])
+                            result['violation_confidence'] = min(1.0, result['violation_confidence'])
+                
+            except Exception as e:
+                print(f"Error getting remote SDR data: {e}")
+        
+        return result
+
+    async def run(self):
+        """Main detection loop with network integration"""
+        # Initialize SDR and remote handler
+        await self.setup_remote_handler()
+        
+        try:
+            while True:
+                signals = await self.detect_signals()
+                violations = []
+                
+                for signal in signals:
+                    # Get enhanced analysis with network data
+                    enhanced_signal = await self.analyze_signal_with_network(
+                        signal['frequency'],
+                        signal
+                    )
+                    
+                    # Check for violations with network confirmation
+                    if enhanced_signal.get('violation_confidence', 0) > self.config['detection']['min_confidence']:
+                        violations.append(enhanced_signal)
+                
+                # Update visualization
+                await self.update_visualization(signals, violations)
+                
+                # Log to database if enabled
+                if self.collections:
+                    try:
+                        if violations:
+                            self.collections['violations'].insert_many(violations)
+                        if signals and np.random.random() < 0.1:  # Log 10% of signals
+                            self.collections['signals'].insert_many(signals)
+                    except Exception as e:
+                        print(f"Database logging error: {e}")
+                
+                await asyncio.sleep(1.0 / self.config['visualization']['frame_rate'])
+                
+        except Exception as e:
+            print(f"Error in detection loop: {e}")
+        finally:
+            if self.remote_handler:
+                await self.remote_handler.__aexit__(None, None, None)
+                
+    async def cleanup(self):
+        """Cleanup resources including remote handler"""
+        if self.remote_handler:
+            await self.remote_handler.__aexit__(None, None, None)
+
 # Start WebSocket Server
 async def main():
     # Load EIBI database
@@ -614,11 +762,27 @@ async def main():
     port = CONFIG['websocket']['port']
     
     print(f"Starting SDR WebSocket server with signal classification on {host}:{port}")
-    async with websockets.serve(
-        lambda ws, path: sdr_stream_with_detection(ws, path, eibi_db, classifier, collections),
-        host, port
-    ):
-        await asyncio.Future()  # Run forever
+    
+    # Use a custom WebSocket server with proper exception handling
+    async def ws_handler(websocket, path):
+        try:
+            await sdr_stream_with_detection(websocket, path, eibi_db, classifier, collections)
+        except Exception as e:
+            print(f"WebSocket handler error: {e}")
+    
+    try:
+        async with websockets.serve(ws_handler, host, port, ping_interval=30, ping_timeout=60):
+            await asyncio.Future()  # Run forever
+    except Exception as e:
+        print(f"WebSocket server error: {e}")
 
 if __name__ == "__main__":
+    # Set higher recursion limit to avoid stack overflow with asyncio
+    import sys
+    sys.setrecursionlimit(10000)
+    
+    # Configure warnings for requests
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
     asyncio.run(main())

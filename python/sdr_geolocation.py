@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional, Union
 from scipy.optimize import minimize
 from haversine import haversine, Unit
+from kiwisdr_client import KiwiSDRClient, KiwiStation
 
 @dataclass
 class SDRReceiver:
@@ -96,27 +97,24 @@ class RemoteSDRHandler:
     def __init__(self):
         self.providers = {
             "kiwisdr": {
-                "url": "http://kiwisdr.com/api",
-                "enabled": True
+                "enabled": True,
+                "client": KiwiSDRClient(),
+                "max_stations": 5  # Max number of KiwiSDR stations to use per frequency
             },
             "websdr": {
                 "url": "http://websdr.org/api", 
                 "enabled": True
-            },
-            "sdrspace": {
-                "url": "http://sdrspace.com/api",
-                "enabled": False
             }
         }
         self.session: Optional[aiohttp.ClientSession] = None
     
     async def __aenter__(self):
-        """Context manager entry - create aiohttp session"""
+        """Context manager entry"""
         self.session = aiohttp.ClientSession()
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit - cleanup session"""
+        """Context manager exit"""
         if self.session:
             await self.session.close()
             self.session = None
@@ -127,46 +125,82 @@ class RemoteSDRHandler:
             raise RuntimeError("RemoteSDRHandler must be used as context manager")
             
         results = []
-        for name, provider in self.providers.items():
-            if not provider["enabled"]:
-                continue
-                
+        
+        # Fetch from KiwiSDR network
+        if self.providers["kiwisdr"]["enabled"]:
+            try:
+                async with self.providers["kiwisdr"]["client"] as kiwi:
+                    measurements = await kiwi.get_measurements(
+                        frequency,
+                        max_stations=self.providers["kiwisdr"]["max_stations"]
+                    )
+                    
+                    for data in measurements:
+                        measurement = SignalMeasurement(
+                            receiver_id=f"kiwisdr_{data['station_id']}",
+                            frequency=frequency,
+                            power=data['signal_strength'],
+                            timestamp=data['timestamp'],
+                            snr=data['snr']
+                        )
+                        results.append({
+                            "provider": "kiwisdr",
+                            "data": data,
+                            "measurement": measurement
+                        })
+            except Exception as e:
+                print(f"Error fetching from KiwiSDR network: {e}")
+        
+        # Fetch from WebSDR network
+        if self.providers["websdr"]["enabled"]:
             try:
                 async with self.session.get(
-                    f"{provider['url']}/data",
+                    f"{self.providers['websdr']['url']}/data",
                     params={"freq": frequency/1e6},
                     timeout=aiohttp.ClientTimeout(total=10)
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
                         measurement = SignalMeasurement(
-                            receiver_id=f"{name}_{data.get('station_id', 'unknown')}",
+                            receiver_id=f"websdr_{data.get('station_id', 'unknown')}",
                             frequency=frequency,
                             power=data.get('power', 0.0),
                             timestamp=time.time(),
-                            snr=data.get('snr'),
-                            modulation=data.get('modulation')
+                            snr=data.get('snr')
                         )
                         results.append({
-                            "provider": name,
+                            "provider": "websdr",
                             "data": data,
                             "measurement": measurement
                         })
             except Exception as e:
-                print(f"Error fetching from {name}: {e}")
+                print(f"Error fetching from WebSDR: {e}")
                 
         return results
     
     def create_virtual_receiver(self, provider_data: Dict) -> SDRReceiver:
         """Create a virtual SDR receiver from provider data"""
-        return SDRReceiver(
-            id=f"{provider_data['provider']}_{provider_data['data'].get('station_id', 'unknown')}",
-            latitude=provider_data['data'].get('latitude', 0.0),
-            longitude=provider_data['data'].get('longitude', 0.0),
-            altitude=provider_data['data'].get('altitude', 0.0),
-            timestamp=time.time(),
-            active=True
-        )
+        provider = provider_data['provider']
+        data = provider_data['data']
+        
+        if provider == "kiwisdr":
+            return SDRReceiver(
+                id=f"kiwisdr_{data['station_id']}",
+                latitude=data['latitude'],
+                longitude=data['longitude'],
+                altitude=0.0,  # KiwiSDR stations typically don't provide altitude
+                timestamp=data['timestamp'],
+                active=True
+            )
+        else:  # websdr
+            return SDRReceiver(
+                id=f"websdr_{data.get('station_id', 'unknown')}",
+                latitude=data.get('latitude', 0.0),
+                longitude=data.get('longitude', 0.0),
+                altitude=data.get('altitude', 0.0),
+                timestamp=time.time(),
+                active=True
+            )
 
 class SDRGeolocation:
     """SDR Geolocation Engine using various techniques"""
