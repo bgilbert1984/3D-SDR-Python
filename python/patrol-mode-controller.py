@@ -4,6 +4,7 @@ import websockets
 import json
 import time
 import os
+import sys
 import logging
 import math
 import random
@@ -34,6 +35,24 @@ OPERATION_MODES = {
     'RETURNING': 'Returning to base',
     'STANDBY': 'Standing by for assignment'
 }
+
+def setup_environment():
+    """Set up environment variables for reliable SDR library operation"""
+    # Add library paths for SDR libraries
+    lib_paths = [
+        os.path.join(os.path.dirname(sys.executable), 'Lib', 'site-packages', 'rtlsdr'),
+        os.path.join(os.path.dirname(sys.executable), 'Library', 'bin'),
+        # Linux-specific paths
+        '/usr/local/lib/python3/dist-packages/rtlsdr',
+        '/usr/lib/python3/dist-packages/rtlsdr',
+        '/usr/local/lib',
+        '/usr/lib'
+    ]
+    
+    for path in lib_paths:
+        if os.path.exists(path) and path not in os.environ.get('PATH', '').split(os.pathsep):
+            os.environ['PATH'] = path + os.pathsep + os.environ.get('PATH', '')
+            logger.info(f"Added SDR library path: {path}")
 
 class PatrolZone:
     """Defines a geographical zone for patrolling"""
@@ -80,6 +99,9 @@ class DronePatrolController:
     
     def __init__(self, config_file='drone_patrol_config.json'):
         """Initialize drone patrol controller"""
+        # Set up environment before anything else
+        setup_environment()
+        
         self.config = self._load_config(config_file)
         self.vehicle = None
         self.websocket = None

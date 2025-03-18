@@ -22,6 +22,81 @@ MIN_SEPARATION_DISTANCE = 15  # meters
 SAFE_ALTITUDE_STEP = 10  # meters to adjust for collision avoidance
 PURSUIT_ROLES = ['LEAD', 'TRIANGULATION', 'BACKUP', 'SCOUT']
 
+# Standard SDR frequency bands for scanning
+FREQUENCY_BANDS = [
+    (88e6, 108e6),   # FM broadcast
+    (144e6, 148e6),  # 2m amateur
+    (430e6, 440e6),  # 70cm amateur
+    (450e6, 470e6)   # UHF band
+]
+
+class SwarmSDRManager:
+    """Manages SDR frequency coordination across the drone swarm"""
+    
+    def __init__(self, swarm_controller):
+        self.swarm_controller = swarm_controller
+        self.devices = {}
+        self.active_frequencies = {}
+        self.scan_results = {}
+        logger.info("SwarmSDRManager initialized")
+
+    async def assign_frequency_bands(self):
+        """Assign different frequency bands to different drones based on their capabilities and positions"""
+        active_drones = list(self.swarm_controller.other_drones.keys()) + [self.swarm_controller.drone_id]
+        
+        # Sort drones by ID to ensure consistent assignment across swarm
+        active_drones.sort()
+        
+        for i, drone_id in enumerate(active_drones):
+            band_index = i % len(FREQUENCY_BANDS)
+            band = FREQUENCY_BANDS[band_index]
+            self.active_frequencies[drone_id] = band
+            
+            if drone_id == self.swarm_controller.drone_id:
+                # Update our SDR configuration
+                self.swarm_controller.config['sdr_parameters'].update({
+                    'center_freq': (band[0] + band[1]) / 2,  # Center of the band
+                    'sample_rate': min(2.4e6, band[1] - band[0]),  # Bandwidth up to 2.4MHz
+                })
+        
+        logger.info(f"Assigned frequency band {self.active_frequencies[self.swarm_controller.drone_id]} to drone {self.swarm_controller.drone_id}")
+        
+        # Notify other drones of the assignment
+        if self.swarm_controller.websocket:
+            assignment_msg = {
+                'type': 'frequency_band_assignment',
+                'assignments': self.active_frequencies,
+                'timestamp': time.time()
+            }
+            await self.swarm_controller.websocket.send(json.dumps(assignment_msg))
+
+    async def process_scan_results(self, results, frequency_band):
+        """Process scan results from a specific frequency band"""
+        drone_id = self.swarm_controller.drone_id
+        self.scan_results[drone_id] = {
+            'band': frequency_band,
+            'results': results,
+            'timestamp': time.time()
+        }
+        
+        # Share results with swarm if significant signals found
+        if any(r.get('is_violation', False) for r in results):
+            await self.share_scan_results(results)
+
+    async def share_scan_results(self, results):
+        """Share significant scan results with the swarm"""
+        if not self.swarm_controller.websocket:
+            return
+            
+        scan_msg = {
+            'type': 'sdr_scan_results',
+            'drone_id': self.swarm_controller.drone_id,
+            'frequency_band': self.active_frequencies[self.swarm_controller.drone_id],
+            'results': results,
+            'timestamp': time.time()
+        }
+        await self.swarm_controller.websocket.send(json.dumps(scan_msg))
+
 class DroneSwarmController:
     """
     Main controller for SDR-equipped drone swarms with collision avoidance
@@ -49,6 +124,7 @@ class DroneSwarmController:
         self.last_position_share = 0  # Timestamp of last position sharing
         self.formation_position = None  # Target position in formation
         self.swarm_leader_id = None  # ID of the current swarm leader
+        self.sdr_manager = SwarmSDRManager(self)  # Initialize SDR manager
         logger.info(f"Drone {self.drone_id} swarm controller initialized")
     
     def _load_config(self, config_file):
@@ -217,7 +293,8 @@ class DroneSwarmController:
                 'role': self.role,
                 'is_lead': self.is_lead,
                 'target_frequency': self.target_frequency,
-                'evasive_maneuver': self.evasive_maneuver
+                'evasive_maneuver': self.evasive_maneuver,
+                'assigned_band': self.sdr_manager.active_frequencies.get(self.drone_id)  # Add frequency band info
             }
             
             await self.websocket.send(json.dumps(status))
@@ -268,6 +345,12 @@ class DroneSwarmController:
             tdoa = data.get('tdoa', 0)
             predicted_location = data.get('predicted_location', [0, 0, 0])
             
+            # Check if frequency is in our assigned band
+            our_band = self.sdr_manager.active_frequencies.get(self.drone_id)
+            if our_band and not (our_band[0] <= freq <= our_band[1]):
+                logger.debug(f"Ignoring signal at {freq} Hz - outside our assigned band {our_band}")
+                return
+            
             # Store SDR data for this frequency
             self.sdr_data[freq] = {
                 'rssi': rssi,
@@ -275,6 +358,14 @@ class DroneSwarmController:
                 'predicted_location': predicted_location,
                 'timestamp': time.time()
             }
+            
+            # Process scan results through SDR manager
+            await self.sdr_manager.process_scan_results([{
+                'frequency': freq,
+                'rssi': rssi,
+                'is_violation': data.get('is_violation', False),
+                'predicted_location': predicted_location
+            }], our_band)
             
             # If we're not already pursuing and this is a violation, start pursuit
             if not self.is_pursuing and data.get('is_violation', False):
@@ -1181,7 +1272,31 @@ class DroneSwarmController:
                 # Process message based on type
                 message_type = data.get('type', '')
                 
-                if message_type == 'command':
+                if message_type == 'drone_registration':
+                    # New drone joined the swarm
+                    drone_id = data.get('drone_id')
+                    if drone_id and drone_id != self.drone_id:
+                        logger.info(f"New drone {drone_id} joined the swarm")
+                        # Reassign frequency bands to accommodate new drone
+                        await self.sdr_manager.assign_frequency_bands()
+                
+                elif message_type == 'frequency_band_assignment':
+                    # Handle frequency band assignment
+                    assignments = data.get('assignments', {})
+                    self.sdr_manager.active_frequencies.update(assignments)
+                    logger.info(f"Updated frequency band assignments: {assignments}")
+                
+                elif message_type == 'sdr_scan_results':
+                    # Handle SDR scan results from other drones
+                    drone_id = data.get('drone_id')
+                    if drone_id and drone_id != self.drone_id:
+                        self.sdr_manager.scan_results[drone_id] = {
+                            'band': data.get('frequency_band'),
+                            'results': data.get('results'),
+                            'timestamp': data.get('timestamp')
+                        }
+                
+                elif message_type == 'command':
                     # Handle command from ground station
                     await self.handle_command(data)
                 
@@ -1323,11 +1438,13 @@ class DroneSwarmController:
             # Find drones with old timestamps
             now = time.time()
             old_drones = []
+            swarm_changed = False
             
             for drone_id, data in self.other_drones.items():
                 last_timestamp = data.get('timestamp', 0)
                 if now - last_timestamp > 10:  # 10 seconds timeout
                     old_drones.append(drone_id)
+                    swarm_changed = True
             
             # Remove old drones
             for drone_id in old_drones:
@@ -1338,6 +1455,11 @@ class DroneSwarmController:
                 if self.swarm_leader_id == drone_id and self.is_pursuing:
                     logger.info(f"Lead drone {drone_id} is no longer active. Re-electing leader.")
                     await self.elect_swarm_leader(self.target_frequency)
+            
+            # Reassign frequency bands if swarm composition changed
+            if swarm_changed:
+                logger.info("Swarm composition changed. Reassigning frequency bands...")
+                await self.sdr_manager.assign_frequency_bands()
             
             await asyncio.sleep(5)
 
@@ -1358,6 +1480,9 @@ class DroneSwarmController:
         # Start receivers and background tasks
         message_task = asyncio.create_task(self.receive_messages())
         cleanup_task = asyncio.create_task(self.cleanup_old_drones())
+        
+        # Assign frequency bands to drones
+        await self.sdr_manager.assign_frequency_bands()
         
         # Status update and position sharing loop
         try:

@@ -2,6 +2,8 @@ import numpy as np
 import json
 import time
 import math
+import aiohttp
+import asyncio
 from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional, Union
 from scipy.optimize import minimize
@@ -88,6 +90,84 @@ class SignalMeasurement:
             modulation=data.get("modulation")
         )
 
+class RemoteSDRHandler:
+    """Handles connections to remote SDR providers"""
+    
+    def __init__(self):
+        self.providers = {
+            "kiwisdr": {
+                "url": "http://kiwisdr.com/api",
+                "enabled": True
+            },
+            "websdr": {
+                "url": "http://websdr.org/api", 
+                "enabled": True
+            },
+            "sdrspace": {
+                "url": "http://sdrspace.com/api",
+                "enabled": False
+            }
+        }
+        self.session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self):
+        """Context manager entry - create aiohttp session"""
+        self.session = aiohttp.ClientSession()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - cleanup session"""
+        if self.session:
+            await self.session.close()
+            self.session = None
+    
+    async def fetch_data(self, frequency: float) -> List[Dict]:
+        """Fetch data from remote SDR providers for the given frequency"""
+        if not self.session:
+            raise RuntimeError("RemoteSDRHandler must be used as context manager")
+            
+        results = []
+        for name, provider in self.providers.items():
+            if not provider["enabled"]:
+                continue
+                
+            try:
+                async with self.session.get(
+                    f"{provider['url']}/data",
+                    params={"freq": frequency/1e6},
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        measurement = SignalMeasurement(
+                            receiver_id=f"{name}_{data.get('station_id', 'unknown')}",
+                            frequency=frequency,
+                            power=data.get('power', 0.0),
+                            timestamp=time.time(),
+                            snr=data.get('snr'),
+                            modulation=data.get('modulation')
+                        )
+                        results.append({
+                            "provider": name,
+                            "data": data,
+                            "measurement": measurement
+                        })
+            except Exception as e:
+                print(f"Error fetching from {name}: {e}")
+                
+        return results
+    
+    def create_virtual_receiver(self, provider_data: Dict) -> SDRReceiver:
+        """Create a virtual SDR receiver from provider data"""
+        return SDRReceiver(
+            id=f"{provider_data['provider']}_{provider_data['data'].get('station_id', 'unknown')}",
+            latitude=provider_data['data'].get('latitude', 0.0),
+            longitude=provider_data['data'].get('longitude', 0.0),
+            altitude=provider_data['data'].get('altitude', 0.0),
+            timestamp=time.time(),
+            active=True
+        )
+
 class SDRGeolocation:
     """SDR Geolocation Engine using various techniques"""
     
@@ -98,6 +178,29 @@ class SDRGeolocation:
         """Initialize geolocation engine"""
         self.receivers: Dict[str, SDRReceiver] = {}
         self.reference_receiver: Optional[str] = None
+        self.remote_handler: Optional[RemoteSDRHandler] = None
+    
+    async def init_remote_handler(self):
+        """Initialize the remote SDR handler"""
+        self.remote_handler = RemoteSDRHandler()
+        return self.remote_handler
+    
+    async def add_remote_measurements(self, frequency: float, measurements: List[SignalMeasurement]):
+        """Add measurements from remote SDR providers"""
+        if not self.remote_handler:
+            return
+            
+        async with self.remote_handler:
+            remote_results = await self.remote_handler.fetch_data(frequency)
+            
+            for result in remote_results:
+                # Add virtual receiver
+                receiver = self.remote_handler.create_virtual_receiver(result)
+                self.add_receiver(receiver)
+                
+                # Add measurement
+                if 'measurement' in result:
+                    measurements.append(result['measurement'])
     
     def add_receiver(self, receiver: SDRReceiver) -> None:
         """Add or update an SDR receiver"""
@@ -601,66 +704,76 @@ class GeoSimulator:
 
 # Test and demo code
 if __name__ == "__main__":
-    # Create a simulator
-    simulator = GeoSimulator()
+    async def main():
+        # Create a simulator
+        simulator = GeoSimulator()
+        
+        # Generate test receivers around San Francisco
+        center_lat = 37.7749
+        center_lon = -122.4194
+        receivers = simulator.generate_receivers(center_lat, center_lon, 10, 5)
+        
+        print(f"Generated {len(receivers)} test receivers around ({center_lat}, {center_lon})")
+        for receiver in receivers:
+            print(f"  {receiver.id}: ({receiver.latitude}, {receiver.longitude})")
+        
+        # Create geolocation engine
+        geo = SDRGeolocation()
+        
+        # Initialize remote SDR support
+        await geo.init_remote_handler()
+        
+        # Add local receivers to engine
+        for receiver in receivers:
+            geo.add_receiver(receiver)
+        
+        # Simulate a transmitter
+        transmitter_lat = 37.8199
+        transmitter_lon = -122.4783
+        transmitter_alt = 0.0
+        frequency = 100e6  # 100 MHz
+        
+        print(f"\nSimulated transmitter at ({transmitter_lat}, {transmitter_lon})")
+        
+        # Generate simulated signal measurements
+        measurements = simulator.simulate_signal(
+            transmitter_lat, transmitter_lon, transmitter_alt,
+            frequency=frequency,
+            power=1.0,
+            receivers=receivers
+        )
+        
+        # Add remote SDR measurements
+        await geo.add_remote_measurements(frequency, measurements)
+        
+        print(f"\nTotal measurements (including remote): {len(measurements)}")
+        
+        # Calculate TDoA
+        measurements_with_tdoa = geo.calculate_tdoa(measurements)
+        
+        # Geolocate using TDoA
+        tdoa_result = geo.geolocate_tdoa(measurements_with_tdoa)
+        if tdoa_result:
+            tdoa_lat, tdoa_lon, tdoa_alt = tdoa_result
+            tdoa_error = haversine((tdoa_lat, tdoa_lon), (transmitter_lat, transmitter_lon), unit=Unit.KILOMETERS)
+            print(f"\nTDoA geolocation result: ({tdoa_lat}, {tdoa_lon})")
+            print(f"Error: {tdoa_error:.2f} km")
+        else:
+            print("\nTDoA geolocation failed")
+        
+        # Geolocate using RSSI
+        rssi_result = geo.geolocate_rssi(measurements)
+        if rssi_result:
+            rssi_lat, rssi_lon, rssi_alt = rssi_result
+            rssi_error = haversine((rssi_lat, rssi_lon), (transmitter_lat, transmitter_lon), unit=Unit.KILOMETERS)
+            print(f"\nRSSI geolocation result: ({rssi_lat}, {rssi_lon})")
+            print(f"Error: {rssi_error:.2f} km")
+        else:
+            print("\nRSSI geolocation failed")
+        
+        # Single receiver estimate
+        print("\nSingle receiver estimate:")
+        possible_locations = geo.estimate_single_receiver(measurements[0])
+        print(f"Generated {len(possible_locations)} possible locations")
     
-    # Generate test receivers around San Francisco
-    center_lat = 37.7749
-    center_lon = -122.4194
-    receivers = simulator.generate_receivers(center_lat, center_lon, 10, 5)
-    
-    print(f"Generated {len(receivers)} test receivers around ({center_lat}, {center_lon})")
-    for receiver in receivers:
-        print(f"  {receiver.id}: ({receiver.latitude}, {receiver.longitude})")
-    
-    # Create a simulated transmitter
-    transmitter_lat = 37.8199
-    transmitter_lon = -122.4783
-    transmitter_alt = 0.0
-    
-    print(f"\nSimulated transmitter at ({transmitter_lat}, {transmitter_lon})")
-    
-    # Generate simulated signal measurements
-    measurements = simulator.simulate_signal(
-        transmitter_lat, transmitter_lon, transmitter_alt,
-        frequency=100e6,  # 100 MHz
-        power=1.0,
-        receivers=receivers
-    )
-    
-    print(f"\nGenerated {len(measurements)} signal measurements")
-    
-    # Create geolocation engine
-    geo = SDRGeolocation()
-    
-    # Add receivers to engine
-    for receiver in receivers:
-        geo.add_receiver(receiver)
-    
-    # Calculate TDoA
-    measurements_with_tdoa = geo.calculate_tdoa(measurements)
-    
-    # Geolocate using TDoA
-    tdoa_result = geo.geolocate_tdoa(measurements_with_tdoa)
-    if tdoa_result:
-        tdoa_lat, tdoa_lon, tdoa_alt = tdoa_result
-        tdoa_error = haversine((tdoa_lat, tdoa_lon), (transmitter_lat, transmitter_lon), unit=Unit.KILOMETERS)
-        print(f"\nTDoA geolocation result: ({tdoa_lat}, {tdoa_lon})")
-        print(f"Error: {tdoa_error:.2f} km")
-    else:
-        print("\nTDoA geolocation failed")
-    
-    # Geolocate using RSSI
-    rssi_result = geo.geolocate_rssi(measurements)
-    if rssi_result:
-        rssi_lat, rssi_lon, rssi_alt = rssi_result
-        rssi_error = haversine((rssi_lat, rssi_lon), (transmitter_lat, transmitter_lon), unit=Unit.KILOMETERS)
-        print(f"\nRSSI geolocation result: ({rssi_lat}, {rssi_lon})")
-        print(f"Error: {rssi_error:.2f} km")
-    else:
-        print("\nRSSI geolocation failed")
-    
-    # Single receiver estimate
-    print("\nSingle receiver estimate:")
-    possible_locations = geo.estimate_single_receiver(measurements[0])
-    print(f"Generated {len(possible_locations)} possible locations")
+    asyncio.run(main())

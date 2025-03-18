@@ -6,8 +6,28 @@ import json
 import time
 import os
 from rtlsdr import RtlSdr
-from pymongo import MongoClient
-from signal_classifier import SignalClassifier, MODULATION_TYPES
+
+# Optional dependencies
+try:
+    from pymongo import MongoClient
+    HAVE_MONGODB = True
+except ImportError:
+    HAVE_MONGODB = False
+    print("MongoDB not available - logging will be disabled")
+
+try:
+    from signal_classifier import SignalClassifier, MODULATION_TYPES
+    HAVE_CLASSIFIER = True
+except ImportError:
+    HAVE_CLASSIFIER = False
+    print("Signal classifier not available - using basic classification")
+    MODULATION_TYPES = {
+        'AM': 'Amplitude Modulation',
+        'FM': 'Frequency Modulation',
+        'SSB': 'Single Sideband',
+        'CW': 'Continuous Wave',
+        'UNKNOWN': 'Unknown Modulation'
+    }
 
 # Global configuration
 CONFIG = {
@@ -19,7 +39,14 @@ CONFIG = {
     },
     'websocket': {
         'host': '0.0.0.0',
-        'port': 8765
+        'port': 8765,
+        'fosphor_port': 8090    # Port for Fosphor visualization
+    },
+    'visualization': {
+        'waterfall_height': 512,
+        'waterfall_width': 1024,
+        'frame_rate': 30,
+        'colormap': 'viridis'
     },
     'eibi': {
         'url': 'https://www.eibispace.de/dx/freq-a.txt',
@@ -44,6 +71,8 @@ CONFIG = {
 
 # MongoDB Connection Setup
 def setup_mongodb():
+    if not HAVE_MONGODB:
+        return None
     try:
         client = MongoClient(CONFIG['mongodb']['uri'])
         db = client[CONFIG['mongodb']['db_name']]
@@ -175,10 +204,14 @@ def analyze_signals(freqs, fft_data, eibi_db, classifier):
         peak_freqs = freqs[window_start:window_end]
         peak_amplitudes = fft_data[window_start:window_end]
         
-        # Classify the signal
-        classification = classifier.predict(peak_freqs, peak_amplitudes, threshold=threshold)
-        modulation = classification['modulation']
-        confidence = classification['confidence']
+        # Classify the signal - use basic classification if classifier not available
+        if HAVE_CLASSIFIER and classifier:
+            classification = classifier.predict(peak_freqs, peak_amplitudes, threshold=threshold)
+            modulation = classification['modulation']
+            confidence = classification['confidence']
+        else:
+            # Basic classification based on spectral shape
+            modulation, confidence = basic_classify_signal(peak_freqs, peak_amplitudes)
         
         # Only accept classification if confidence is high enough
         if confidence < CONFIG['detection']['min_confidence']:
@@ -217,9 +250,97 @@ def analyze_signals(freqs, fft_data, eibi_db, classifier):
     
     return signals, violations
 
+def basic_classify_signal(freqs, amplitudes):
+    """Basic signal classification when ML classifier is not available"""
+    # Calculate basic spectral features
+    bandwidth = np.abs(freqs[-1] - freqs[0])
+    peak_amp = np.max(amplitudes)
+    mean_amp = np.mean(amplitudes)
+    std_amp = np.std(amplitudes)
+    
+    # Simple classification rules
+    if bandwidth < 5000:  # Very narrow signal
+        if std_amp < 0.1:
+            return 'CW', 0.7
+        else:
+            return 'SSB', 0.6
+    elif bandwidth < 15000:  # Medium bandwidth
+        if peak_amp > 2 * mean_amp:
+            return 'AM', 0.65
+        else:
+            return 'SSB', 0.6
+    else:  # Wide bandwidth
+        if std_amp > 0.2:
+            return 'FM', 0.7
+        else:
+            return 'UNKNOWN', 0.5
+
+def setup_visualization_backend():
+    """Set up the best available visualization backend"""
+    try:
+        # Try to import fosphor for GPU-accelerated visualization
+        import gr_fosphor
+        print("Using Fosphor for GPU-accelerated visualization")
+        return create_fosphor_backend()
+    except ImportError:
+        print("Fosphor not available, falling back to standard visualization")
+        return create_standard_backend()
+
+def create_fosphor_backend():
+    """Create a Fosphor-based visualization backend"""
+    try:
+        import gr_fosphor
+        backend = {
+            'type': 'fosphor',
+            'fft_size': CONFIG['sdr']['num_samples'],
+            'height': CONFIG['visualization']['waterfall_height'],
+            'width': CONFIG['visualization']['waterfall_width'],
+            'frame_rate': CONFIG['visualization']['frame_rate']
+        }
+        
+        # Initialize Fosphor block
+        fosphor = gr_fosphor.fosphor_qt()
+        fosphor.set_frequency_range(CONFIG['sdr']['center_freq'], CONFIG['sdr']['sample_rate'])
+        fosphor.set_palette(CONFIG['visualization']['colormap'])
+        
+        backend['fosphor'] = fosphor
+        return backend
+    except Exception as e:
+        print(f"Error creating Fosphor backend: {e}")
+        return create_standard_backend()
+
+def create_standard_backend():
+    """Create a standard CPU-based visualization backend"""
+    return {
+        'type': 'standard',
+        'fft_size': CONFIG['sdr']['num_samples'],
+        'height': CONFIG['visualization']['waterfall_height'],
+        'width': CONFIG['visualization']['waterfall_width'],
+        'frame_rate': CONFIG['visualization']['frame_rate'],
+        'waterfall_data': np.zeros((
+            CONFIG['visualization']['waterfall_height'],
+            CONFIG['visualization']['waterfall_width']
+        ), dtype=np.float32)
+    }
+
+def update_visualization(backend, fft_data):
+    """Update visualization data based on backend type"""
+    if backend['type'] == 'fosphor':
+        # Fosphor handles the visualization internally
+        backend['fosphor'].update_data(fft_data)
+        return None
+    else:
+        # Standard visualization - roll waterfall and add new line
+        backend['waterfall_data'] = np.roll(backend['waterfall_data'], -1, axis=0)
+        backend['waterfall_data'][-1] = fft_data
+        return backend['waterfall_data']
+
 # WebSocket handler for SDR streaming with violation detection
 async def sdr_stream_with_detection(websocket, path, eibi_db, classifier, collections):
     print("Client connected to SDR data stream with violation detection")
+    
+    # Set up visualization backend
+    vis_backend = setup_visualization_backend()
     
     sdr = setup_sdr()
     if not sdr:
@@ -239,6 +360,9 @@ async def sdr_stream_with_detection(websocket, path, eibi_db, classifier, collec
             
             # Normalize FFT data
             fft_data = fft_data / np.max(fft_data) if np.max(fft_data) > 0 else fft_data
+            
+            # Update visualization
+            waterfall_data = update_visualization(vis_backend, fft_data)
             
             # Analyze signals and detect violations
             signals, violations = analyze_signals(freqs, fft_data, eibi_db, classifier)
@@ -264,6 +388,10 @@ async def sdr_stream_with_detection(websocket, path, eibi_db, classifier, collec
                 "timestamp": time.time()
             }
             
+            # Add waterfall data if using standard backend
+            if waterfall_data is not None:
+                data["waterfall"] = waterfall_data.tolist()
+            
             # Send to WebSocket
             await websocket.send(json.dumps(data))
             
@@ -276,7 +404,7 @@ async def sdr_stream_with_detection(websocket, path, eibi_db, classifier, collec
                     print(f"  - ...and {len(violations) - 3} more")
             
             # Limit update rate
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1.0 / CONFIG['visualization']['frame_rate'])
     
     except websockets.exceptions.ConnectionClosed:
         print("Client disconnected")
@@ -464,18 +592,22 @@ async def main():
     # Load EIBI database
     eibi_db = load_eibi_data()
     
-    # Load or train signal classifier
-    model_path = CONFIG['classifier']['model_path']
-    if os.path.exists(model_path):
-        print(f"Loading signal classifier model from {model_path}")
-        classifier = SignalClassifier(model_path)
+    # Load or train signal classifier if available
+    classifier = None
+    if HAVE_CLASSIFIER:
+        model_path = CONFIG['classifier']['model_path']
+        if os.path.exists(model_path):
+            print(f"Loading signal classifier model from {model_path}")
+            classifier = SignalClassifier(model_path)
+        else:
+            print(f"Training new signal classifier model")
+            from signal_classifier import train_new_model
+            classifier = train_new_model(model_path)
     else:
-        print(f"Training new signal classifier model")
-        from signal_classifier import train_new_model
-        classifier = train_new_model(model_path)
+        print("Using basic signal classification")
     
-    # Setup MongoDB connection
-    collections = setup_mongodb()
+    # Setup MongoDB connection if available
+    collections = setup_mongodb() if HAVE_MONGODB else None
     
     # Start WebSocket server
     host = CONFIG['websocket']['host']

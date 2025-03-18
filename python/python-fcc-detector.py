@@ -5,10 +5,42 @@ import requests
 import json
 import time
 from rtlsdr import RtlSdr
-from pymongo import MongoClient
+
+# Handle optional MongoDB import
+try:
+    from pymongo import MongoClient
+    HAVE_MONGODB = True
+except ImportError:
+    HAVE_MONGODB = False
+    print("MongoDB not available - violation logging will be disabled")
+
+import os
+import sys
+
+def setup_environment():
+    """Set up environment variables for reliable SDR library operation"""
+    # Add library paths for SDR libraries
+    lib_paths = [
+        os.path.join(os.path.dirname(sys.executable), 'Lib', 'site-packages', 'rtlsdr'),
+        os.path.join(os.path.dirname(sys.executable), 'Library', 'bin'),
+        # Linux-specific paths
+        '/usr/local/lib/python3/dist-packages/rtlsdr',
+        '/usr/lib/python3/dist-packages/rtlsdr',
+        '/usr/local/lib',
+        '/usr/lib'
+    ]
+    
+    for path in lib_paths:
+        if os.path.exists(path) and path not in os.environ.get('PATH', '').split(os.pathsep):
+            os.environ['PATH'] = path + os.pathsep + os.environ.get('PATH', '')
+            print(f"Added SDR library path: {path}")
 
 # MongoDB Connection Setup
 def setup_mongodb():
+    """Connect to MongoDB if available"""
+    if not HAVE_MONGODB:
+        return None
+        
     try:
         client = MongoClient("mongodb://localhost:27017/")
         db = client["fcc_monitor"]
@@ -53,6 +85,9 @@ def load_eibi_data():
 # SDR Configuration
 def setup_sdr():
     try:
+        # Set up environment before initializing SDR
+        setup_environment()
+        
         sdr = RtlSdr()
         sdr.sample_rate = 2.048e6  # 2.048 MHz
         sdr.center_freq = 100e6    # 100 MHz (FM broadcast band)

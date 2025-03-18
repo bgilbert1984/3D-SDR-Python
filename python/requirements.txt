@@ -1,18 +1,22 @@
 fastapi
 uvicorn
-websockets
+websockets>=10.0
 pyrtlsdr
-numpy
-scipy
+numpy>=1.20.0
+scipy>=1.7.0
 haversine
 dronekit
-tensorflow
+tensorflow>=2.7.0
 pymavlink
 joblib
 selenium
 sounddevice
-requests
-gnuradio
-gr-osmosdr
+requests>=2.26.0
 dataclasses
 typing-extensions
+matplotlib>=3.3.0
+scikit-learn>=0.24.0
+cupy-cuda11x>=11.0.0  # For CUDA 11.x, adjust version as needed
+pymongo>=4.0.0  # Optional: for database logging
+rtlsdr>=0.2.9
+aiohttp>=3.8.0  # For remote SDR API integration

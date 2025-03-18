@@ -21,6 +21,16 @@ MODULATION_TYPES = {
     'UNKNOWN': 'Unknown'
 }
 
+def setup_gpu_processing():
+    """Set up GPU-accelerated signal processing if available"""
+    try:
+        import cupy as cp
+        print("Using GPU acceleration for signal processing")
+        return {'enabled': True, 'xp': cp}
+    except ImportError:
+        print("GPU acceleration not available, using CPU")
+        return {'enabled': False, 'xp': np}
+
 class SignalClassifier:
     def __init__(self, model_path=None):
         """Initialize the signal classifier, optionally loading a pre-trained model."""
@@ -31,6 +41,10 @@ class SignalClassifier:
             'variance', 'skewness', 'kurtosis', 'crest_factor',
             'spectral_flatness', 'spectral_rolloff'
         ]
+        
+        # Set up GPU acceleration
+        self.gpu = setup_gpu_processing()
+        self.xp = self.gpu['xp']  # Will be cupy if GPU available, numpy if not
         
         if model_path and os.path.exists(model_path):
             self.load_model(model_path)
@@ -84,21 +98,20 @@ class SignalClassifier:
     def extract_features(self, freqs, amplitudes, threshold=0.2):
         """
         Extract features from a signal for classification.
-        
-        Parameters:
-        freqs: Array of frequency values
-        amplitudes: Array of amplitude values (normalized)
-        threshold: Power threshold to consider for feature extraction
-        
-        Returns:
-        Dictionary of features
+        Now with GPU acceleration support.
         """
-        # Ensure we have numpy arrays
-        freqs = np.array(freqs)
-        amplitudes = np.array(amplitudes)
+        # Ensure we have arrays on the correct device (GPU or CPU)
+        freqs = self.xp.array(freqs)
+        amplitudes = self.xp.array(amplitudes)
         
         # Find peaks above threshold
-        peak_indices = sg.find_peaks(amplitudes, height=threshold)[0]
+        if self.gpu['enabled']:
+            # CuPy doesn't have signal.find_peaks, use simplified peak finding
+            peak_indices = self.xp.where((amplitudes > threshold) & 
+                                       (amplitudes > self.xp.roll(amplitudes, 1)) & 
+                                       (amplitudes > self.xp.roll(amplitudes, -1)))[0]
+        else:
+            peak_indices = sg.find_peaks(amplitudes, height=threshold)[0]
         
         # If no significant peaks found, return noise features
         if len(peak_indices) == 0:
@@ -106,8 +119,8 @@ class SignalClassifier:
                 'bandwidth': 0,
                 'center_freq': 0,
                 'peak_power': 0,
-                'mean_power': np.mean(amplitudes),
-                'variance': np.var(amplitudes),
+                'mean_power': float(self.xp.mean(amplitudes)),
+                'variance': float(self.xp.var(amplitudes)),
                 'skewness': 0,
                 'kurtosis': 0,
                 'crest_factor': 0,
@@ -116,48 +129,52 @@ class SignalClassifier:
             }
         
         # Find the strongest peak
-        strongest_peak_idx = peak_indices[np.argmax(amplitudes[peak_indices])]
+        strongest_peak_idx = peak_indices[self.xp.argmax(amplitudes[peak_indices])]
         
         # Calculate bandwidth (use 3dB below peak for estimation)
-        peak_power_db = 10 * np.log10(amplitudes[strongest_peak_idx])
+        peak_power_db = 10 * self.xp.log10(amplitudes[strongest_peak_idx])
         threshold_db = peak_power_db - 3
         threshold_linear = 10 ** (threshold_db / 10)
         
         # Find indices where power is above threshold
         above_threshold = amplitudes > threshold_linear
-        if np.any(above_threshold):
-            bandwidth = np.max(freqs[above_threshold]) - np.min(freqs[above_threshold])
+        if self.xp.any(above_threshold):
+            bandwidth = float(self.xp.max(freqs[above_threshold]) - self.xp.min(freqs[above_threshold]))
         else:
             bandwidth = 0
         
         # Calculate statistical features
-        mean_power = np.mean(amplitudes)
-        variance = np.var(amplitudes)
+        mean_power = float(self.xp.mean(amplitudes))
+        variance = float(self.xp.var(amplitudes))
         
         # Higher-order statistics
-        amplitudes_normalized = (amplitudes - mean_power) / np.sqrt(variance) if variance > 0 else amplitudes
-        skewness = np.mean(amplitudes_normalized ** 3) if variance > 0 else 0
-        kurtosis = np.mean(amplitudes_normalized ** 4) if variance > 0 else 0
+        if variance > 0:
+            amplitudes_normalized = (amplitudes - mean_power) / self.xp.sqrt(variance)
+            skewness = float(self.xp.mean(amplitudes_normalized ** 3))
+            kurtosis = float(self.xp.mean(amplitudes_normalized ** 4))
+        else:
+            skewness = 0
+            kurtosis = 0
         
         # Crest factor (peak-to-average power ratio)
-        crest_factor = np.max(amplitudes) / mean_power if mean_power > 0 else 0
+        crest_factor = float(self.xp.max(amplitudes) / mean_power) if mean_power > 0 else 0
         
         # Spectral features
-        spectral_flatness = np.exp(np.mean(np.log(amplitudes + 1e-10))) / mean_power if mean_power > 0 else 0
+        spectral_flatness = float(self.xp.exp(self.xp.mean(self.xp.log(amplitudes + 1e-10))) / mean_power) if mean_power > 0 else 0
         
         # Spectral rolloff (frequency below which 85% of energy is contained)
-        cumsum = np.cumsum(amplitudes)
+        cumsum = self.xp.cumsum(amplitudes)
         spectral_rolloff = 0
-        if cumsum[-1] > 0:
-            rolloff_point = 0.85 * cumsum[-1]
-            rolloff_idx = np.where(cumsum >= rolloff_point)[0][0]
-            spectral_rolloff = freqs[rolloff_idx]
+        if float(cumsum[-1]) > 0:
+            rolloff_point = 0.85 * float(cumsum[-1])
+            rolloff_idx = self.xp.where(cumsum >= rolloff_point)[0][0]
+            spectral_rolloff = float(freqs[rolloff_idx])
         
-        # Return features as a dictionary
+        # Move data back to CPU if needed and convert to Python float
         return {
             'bandwidth': bandwidth,
-            'center_freq': freqs[strongest_peak_idx],
-            'peak_power': amplitudes[strongest_peak_idx],
+            'center_freq': float(freqs[strongest_peak_idx]),
+            'peak_power': float(amplitudes[strongest_peak_idx]),
             'mean_power': mean_power,
             'variance': variance,
             'skewness': skewness,
@@ -178,6 +195,10 @@ class SignalClassifier:
             return False
         
         print(f"Training signal classifier on {X_train.shape[0]} samples")
+        
+        # Move data to CPU for sklearn training
+        if self.gpu['enabled']:
+            X_train = self.gpu['xp'].asnumpy(X_train)
         
         # Scale features
         X_train_scaled = self.scaler.fit_transform(X_train)
@@ -219,25 +240,19 @@ class SignalClassifier:
         }
     
     def predict(self, freqs, amplitudes, threshold=0.2):
-        """
-        Predict the modulation type of a signal.
-        
-        Parameters:
-        freqs: Array of frequency values
-        amplitudes: Array of amplitude values (normalized)
-        threshold: Power threshold to consider for feature extraction
-        
-        Returns:
-        Dictionary with prediction results
-        """
+        """Predict the modulation type of a signal."""
         if self.model is None:
             return {'modulation': 'UNKNOWN', 'confidence': 0.0, 'features': {}}
         
-        # Extract features from the signal
+        # Extract features using GPU if available
         features = self.extract_features(freqs, amplitudes, threshold)
         
         # Convert to feature vector
         X = self.features_to_vector(features)
+        
+        # Move to CPU for sklearn prediction
+        if self.gpu['enabled']:
+            X = self.gpu['xp'].asnumpy(X)
         
         # Scale features
         X_scaled = self.scaler.transform(X)

@@ -439,3 +439,140 @@ function animate() {
 
 // Start animation loop
 animate();
+
+// Create Fosphor visualization setup after the existing WebGL setup
+const fosphorCanvas = document.createElement('canvas');
+fosphorCanvas.id = 'fosphorCanvas';
+fosphorCanvas.style.position = 'absolute';
+fosphorCanvas.style.top = '10px';
+fosphorCanvas.style.right = '10px';
+fosphorCanvas.style.width = '400px';
+fosphorCanvas.style.height = '300px';
+fosphorCanvas.style.backgroundColor = 'rgba(0,0,0,0.7)';
+document.body.appendChild(fosphorCanvas);
+
+// Fosphor WebSocket handler
+function setupFosphorWebsocket() {
+    const fosphorSocket = new WebSocket('ws://localhost:8090/fosphor');
+    
+    fosphorSocket.onmessage = async (event) => {
+        try {
+            const buffer = await event.data.arrayBuffer();
+            updateHeatmapTexture(buffer);
+        } catch (error) {
+            console.error('Error processing Fosphor data:', error);
+        }
+    };
+    
+    fosphorSocket.onerror = (error) => {
+        console.error('Fosphor WebSocket error:', error);
+    };
+    
+    return fosphorSocket;
+}
+
+// Initialize WebGL for Fosphor heatmap
+const fosphorGl = fosphorCanvas.getContext('webgl2');
+let fosphorTexture = null;
+let fosphorShaderProgram = null;
+
+function initFosphorGL() {
+    // Create and initialize WebGL resources for Fosphor
+    const vertexShader = fosphorGl.createShader(fosphorGl.VERTEX_SHADER);
+    fosphorGl.shaderSource(vertexShader, `
+        attribute vec2 position;
+        attribute vec2 texCoord;
+        varying vec2 vTexCoord;
+        void main() {
+            gl_Position = vec4(position, 0.0, 1.0);
+            vTexCoord = texCoord;
+        }
+    `);
+    fosphorGl.compileShader(vertexShader);
+
+    const fragmentShader = fosphorGl.createShader(fosphorGl.FRAGMENT_SHADER);
+    fosphorGl.shaderSource(fragmentShader, `
+        precision mediump float;
+        uniform sampler2D uTexture;
+        varying vec2 vTexCoord;
+        
+        vec3 heatmapGradient(float value) {
+            vec3 color;
+            value = clamp(value, 0.0, 1.0);
+            
+            if (value < 0.33) {
+                color = mix(vec3(0,0,0.5), vec3(0,1,1), value * 3.0);
+            } else if (value < 0.66) {
+                color = mix(vec3(0,1,1), vec3(1,1,0), (value - 0.33) * 3.0);
+            } else {
+                color = mix(vec3(1,1,0), vec3(1,0,0), (value - 0.66) * 3.0);
+            }
+            return color;
+        }
+        
+        void main() {
+            float value = texture2D(uTexture, vTexCoord).r;
+            vec3 color = heatmapGradient(value);
+            gl_FragColor = vec4(color, 1.0);
+        }
+    `);
+    fosphorGl.compileShader(fragmentShader);
+
+    fosphorShaderProgram = fosphorGl.createProgram();
+    fosphorGl.attachShader(fosphorShaderProgram, vertexShader);
+    fosphorGl.attachShader(fosphorShaderProgram, fragmentShader);
+    fosphorGl.linkProgram(fosphorShaderProgram);
+    fosphorGl.useProgram(fosphorShaderProgram);
+
+    // Create texture for waterfall data
+    fosphorTexture = fosphorGl.createTexture();
+    fosphorGl.bindTexture(fosphorGl.TEXTURE_2D, fosphorTexture);
+    fosphorGl.texParameteri(fosphorGl.TEXTURE_2D, fosphorGl.TEXTURE_MIN_FILTER, fosphorGl.LINEAR);
+    fosphorGl.texParameteri(fosphorGl.TEXTURE_2D, fosphorGl.TEXTURE_MAG_FILTER, fosphorGl.LINEAR);
+    fosphorGl.texParameteri(fosphorGl.TEXTURE_2D, fosphorGl.TEXTURE_WRAP_S, fosphorGl.CLAMP_TO_EDGE);
+    fosphorGl.texParameteri(fosphorGl.TEXTURE_2D, fosphorGl.TEXTURE_WRAP_T, fosphorGl.CLAMP_TO_EDGE);
+}
+
+function updateHeatmapTexture(buffer) {
+    const data = new Float32Array(buffer);
+    const width = 1024;  // Fosphor default width
+    const height = 512;  // Fosphor default height
+    
+    fosphorGl.bindTexture(fosphorGl.TEXTURE_2D, fosphorTexture);
+    fosphorGl.texImage2D(
+        fosphorGl.TEXTURE_2D,
+        0,
+        fosphorGl.R32F,
+        width,
+        height,
+        0,
+        fosphorGl.RED,
+        fosphorGl.FLOAT,
+        data
+    );
+    
+    // Render updated texture
+    fosphorGl.drawArrays(fosphorGl.TRIANGLE_STRIP, 0, 4);
+}
+
+// Initialize Fosphor visualization
+initFosphorGL();
+const fosphorWs = setupFosphorWebsocket();
+
+// Add Fosphor toggle control
+const fosphorToggle = document.createElement('div');
+fosphorToggle.style.position = 'absolute';
+fosphorToggle.style.top = '320px';
+fosphorToggle.style.right = '10px';
+fosphorToggle.innerHTML = `
+    <label class="toggle-switch">
+        <input type="checkbox" id="toggleFosphor" checked>
+        <span class="toggle-slider"></span>
+        <span style="color: white; margin-left: 10px;">Fosphor View</span>
+    </label>
+`;
+document.body.appendChild(fosphorToggle);
+
+document.getElementById('toggleFosphor').addEventListener('change', (e) => {
+    fosphorCanvas.style.display = e.target.checked ? 'block' : 'none';
+});

@@ -1,23 +1,49 @@
+import os
+import sys
 import asyncio
 import numpy as np
 import websockets
 import json
 import time
-import os
 import logging
 from scipy.optimize import minimize
 from haversine import haversine
 from dronekit import connect, VehicleMode, LocationGlobalRelative
 import tensorflow as tf
 from pymavlink import mavutil
-from gnuradio import osmosdr
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('drone_sdr_controller')
 
+# Handle optional gnuradio import
+try:
+    from gnuradio import osmosdr
+    HAVE_GNURADIO = True
+except ImportError:
+    HAVE_GNURADIO = False
+    logger.warning("gnuradio not available - some SDR features will be limited")
+
 # Constants
 SPEED_OF_LIGHT = 299792458  # m/s
+
+def setup_environment():
+    """Set up environment variables for reliable SDR library operation"""
+    # Add library paths for SDR libraries
+    lib_paths = [
+        os.path.join(os.path.dirname(sys.executable), 'Lib', 'site-packages', 'rtlsdr'),
+        os.path.join(os.path.dirname(sys.executable), 'Library', 'bin'),
+        # Linux-specific paths
+        '/usr/local/lib/python3/dist-packages/rtlsdr',
+        '/usr/lib/python3/dist-packages/rtlsdr',
+        '/usr/local/lib',
+        '/usr/lib'
+    ]
+    
+    for path in lib_paths:
+        if os.path.exists(path) and path not in os.environ.get('PATH', '').split(os.pathsep):
+            os.environ['PATH'] = path + os.pathsep + os.environ.get('PATH', '')
+            logger.info(f"Added SDR library path: {path}")
 
 class DroneSDRController:
     """
@@ -26,6 +52,9 @@ class DroneSDRController:
     
     def __init__(self, config_file='drone_config.json'):
         """Initialize the drone controller with configuration"""
+        # Set up environment before anything else
+        setup_environment()
+        
         self.config = self._load_config(config_file)
         self.vehicle = None
         self.sdr_data = {}
