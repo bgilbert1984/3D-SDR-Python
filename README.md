@@ -1,3 +1,6 @@
+see more @ ti.pics
+dualwolf4d@gmail.com
+
 # SDR Drone Pursuit System
 
 A sophisticated real-time drone-based SDR signal monitoring and pursuit system with 3D visualization.
@@ -9,6 +12,7 @@ A sophisticated real-time drone-based SDR signal monitoring and pursuit system w
 - Multiple modulation type detection (AM, FM, SSB, CW)
 - Signal simulation capabilities for testing
 - Automated SDR device discovery and configuration
+- EIBI database integration for signal identification
 
 ### Drone Control
 - Multi-drone swarm coordination
@@ -23,6 +27,7 @@ A sophisticated real-time drone-based SDR signal monitoring and pursuit system w
 - Signal geolocation using TDOA/RSSI
 - AI-powered signal movement prediction
 - Spectrum visualization and waterfall displays
+- Machine learning model for modulation classification
 
 ### 3D Visualization
 - Real-time 3D mapping using CesiumJS
@@ -39,6 +44,7 @@ A sophisticated real-time drone-based SDR signal monitoring and pursuit system w
 - MongoDB integration for data logging
 - AI processing engine for signal classification
 - Geolocation engine for signal source tracking
+- Signal classifier with GPU acceleration support
 
 ### Frontend Components
 - CesiumJS 3D globe visualization
@@ -75,7 +81,13 @@ cd python
 python drone-sdr-controller.py
 ```
 
-3. Open the web interface:
+3. Or use the integrated detector:
+```bash
+cd python
+python integrated-detector.py
+```
+
+4. Open the web interface:
 ```bash
 cd frontend
 python -m http.server 8000
@@ -89,6 +101,7 @@ The system uses several configuration files:
 - `drone_config.json`: Drone and SDR parameters
 - `patrol_config.json`: Patrol patterns and zones
 - `ai_models/`: AI model files for signal classification
+- `signal_classifier_model.pkl`: Pre-trained signal classification model
 
 ## Network Architecture
 
@@ -98,9 +111,32 @@ The system uses a multi-layer communication approach:
 - WebSocket for real-time data streaming
 - MAVLink for drone control
 
+## Recent Updates
+
+### Signal Classifier Improvements
+- Added machine learning-based signal classifier with support for AM, FM, SSB, CW, PSK, and FSK modulations
+- GPU acceleration support for signal processing via CuPy (when available)
+- Fallback to CPU processing when GPU is unavailable
+- Feature extraction for signal classification using spectral characteristics
+
+### EIBI Database Integration
+- Added support for EIBI shortwave database for signal identification
+- Automatic database fetching and caching system
+- Fallback mechanisms for EIBI data retrieval
+- Signal matching against known transmitters
+
+### WebSocket Enhancements
+- Improved WebSocket connection stability with proper ping/pong intervals
+- Better error handling for connection issues
+- Robust reconnection strategies
+
+### Visualization Improvements
+- Optional GPU-accelerated visualization using Fosphor when available
+- Fallback to standard visualization methods when GPU acceleration is unavailable
+
 ## License
 
-This project is licensed under the #@$@#%%^@^^ Licensx
+This project is licensed under the MIT License
 
 ## Documentation
 
@@ -194,6 +230,16 @@ Wrap
 Copy
 cd python
 python drone-sdr-controller.py
+Or Use Integrated Detector:
+bash
+
+Collapse
+
+Wrap
+
+Copy
+cd python
+python integrated-detector.py
 Open Web Interface:
 bash
 
@@ -209,6 +255,7 @@ Configuration Files
 drone_config.json: Customizes drone and SDR settings.
 patrol_config.json: Defines patrol zones and patterns.
 ai_models/: Stores AI models for signal classification.
+signal_classifier_model.pkl: Pre-trained signal classification model.
 Progress and Strengths
 Your latest update showcases significant progress! Here’s what stands out:
 
