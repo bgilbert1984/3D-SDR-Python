@@ -1,0 +1,108 @@
+flowchart TD
+    subgraph "SDR Patrol System"
+        PMC[Patrol Mode Controller]
+        
+        subgraph "Patrol Modes"
+            GM[Grid Mode]
+            SM[Spiral Mode]
+            PM[Perimeter Mode]
+            HSM[Hotspot Mode]
+            CM[Custom Mode]
+        end
+        
+        subgraph "SDR Scanning"
+            SSA[Spectrum Scan Algorithm]
+            SDP[Signal Detection Processor]
+            SCA[Signal Classification AI]
+            VSI[Violation Signal Identification]
+        end
+        
+        subgraph "Geospatial Components"
+            PZ[Patrol Zone Manager]
+            WPG[Waypoint Generator]
+            RO[Route Optimizer]
+            HS[Hotspot Storage]
+        end
+        
+        subgraph "Operation Modes"
+            PMode[Patrol Mode]
+            PursuitMode[Pursuit Mode]
+            RTHMode[Return to Home Mode]
+            SMode[Standby Mode]
+        end
+    end
+    
+    subgraph "Swarm Coordination"
+        SR[Swarm Roles]
+        ZA[Zone Assignment]
+        CP[Coverage Processor]
+        MDA[Multi-Drone Assignment]
+        CAV[Collision Avoidance]
+    end
+    
+    subgraph "Visualization"
+        RTM[Real-time Mapping]
+        CV[Coverage Visualization]
+        PVis[Patrol Visualization]
+        HM[Heatmap Generator]
+        VVis[Violation Visualization]
+    end
+    
+    %% Patrol Mode Selection
+    PMC --> GM
+    PMC --> SM
+    PMC --> PM
+    PMC --> HSM
+    PMC --> CM
+    
+    %% Patrol Operations
+    GM & SM & PM & HSM & CM --> WPG
+    WPG --> RO
+    RO --> PMC
+    
+    %% Zone Management
+    PZ --> WPG
+    HS --> HSM
+    PZ --> HS
+    
+    %% Operation Mode Transitions
+    PMC --> PMode
+    PMC --> PursuitMode
+    PMC --> RTHMode
+    PMC --> SMode
+    
+    %% SDR Processing
+    SSA --> SDP
+    SDP --> SCA
+    SCA --> VSI
+    VSI --> PMC
+    
+    %% Violation Detection to Pursuit
+    VSI --> PursuitMode
+    
+    %% Swarm Coordination
+    PMC <--> SR
+    PMC <--> ZA
+    ZA --> CP
+    CP --> MDA
+    MDA --> PMC
+    CAV --> PMC
+    
+    %% Visualization
+    PMC --> RTM
+    CP --> CV
+    PZ --> PVis
+    HS --> HM
+    VSI --> VVis
+    
+    %% Hotspot Recording
+    VSI --> HS
+    
+    classDef patrolMode fill:#C5E8F7,stroke:#2980B9,stroke-width:2px
+    class GM,SM,PM,HSM,CM patrolMode
+    
+    classDef violationProcess fill:#F5B7B1,stroke:#C0392B,stroke-width:2px
+    class VSI,PursuitMode violationProcess
+    
+    classDef hotspotRelated fill:#FCF3CF,stroke:#F39C12,stroke-width:2px
+    class HSM,HS,HM hotspotRelated
