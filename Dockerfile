@@ -6,9 +6,9 @@ WORKDIR /app
 
 # Install system dependencies, Python and Node.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.9 \
+    python3.10 \
     python3-pip \
-    python3.9-dev \
+    python3.10-dev \
     build-essential \
     git \
     librtlsdr-dev \

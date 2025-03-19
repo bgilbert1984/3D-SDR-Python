@@ -29,3 +29,5 @@ Decompiler!/
 /venv
 
 /enterprises
+
+/python/__pycache__
