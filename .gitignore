@@ -27,3 +27,5 @@ Decompiler!/
 *.apk
 
 /venv
+
+/enterprises

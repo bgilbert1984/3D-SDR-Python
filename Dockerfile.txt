@@ -1,0 +1,27 @@
+# Use Python 3.9 as the base image
+FROM python:3.9-slim
+
+# Set working directory in container
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone the repository
+RUN git clone https://github.com/bgilbert1984/3D-SDR-Python.git .
+
+# Install Python dependencies
+# If you have a requirements.txt file, uncomment the next line
+# RUN pip install --no-cache-dir -r requirements.txt
+
+# Install common Python libraries that might be needed for SDR and 3D visualization
+RUN pip install --no-cache-dir numpy matplotlib scipy pandas plotly flask requests
+
+# Expose port 5000 for potential web interface
+EXPOSE 5000
+
+# Command to run when container starts (modify this according to your application's entry point)
+CMD ["python", "app.py"]

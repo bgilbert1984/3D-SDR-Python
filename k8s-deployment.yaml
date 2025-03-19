@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sdr-threejs
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sdr-threejs-config
+  namespace: sdr-threejs
+data:
+  NODE_ENV: "production"
+  PYTHONPATH: "/app"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdr-threejs
+  namespace: sdr-threejs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sdr-threejs
+  template:
+    metadata:
+      labels:
+        app: sdr-threejs
+    spec:
+      containers:
+      - name: sdr-threejs
+        image: sdr-threejs:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: sdr-threejs-config
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+        securityContext:
+          privileged: true  # Required for SDR device access
+        volumeMounts:
+        - name: dev-bus-usb
+          mountPath: /dev/bus/usb
+      volumes:
+      - name: dev-bus-usb
+        hostPath:
+          path: /dev/bus/usb
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdr-threejs-service
+  namespace: sdr-threejs
+spec:
+  type: NodePort
+  ports:
+  - port: 8000
+    targetPort: 8000
+    nodePort: 30000
+  selector:
+    app: sdr-threejs
