@@ -733,7 +733,7 @@
             signalsLayer.clearLayers();
             violationsLayer.clearLayers();
             uncertaintyLayer.clearLayers();
-            
+
             // Add new markers
             geoResults.forEach(result => {
                 // Skip if no coordinates
@@ -744,25 +744,25 @@
                     }
                     return;
                 }
-                
+
                 // Get frequency as string for lookup
                 const freqKey = result.frequency_mhz.toFixed(3);
-                
+
                 // Check if this is a violation
                 const isViolation = violations[freqKey] ? true : false;
-                
+
                 // Determine marker color based on modulation
                 const modulation = result.modulation || 'UNKNOWN';
                 const color = modulationColors[modulation] || '#CCCCCC';
-                
+
                 // Create custom marker
                 const markerHtml = `<div class="${isViolation ? 'violation-marker' : 'signal-marker'}" style="background-color: ${color};"></div>`;
                 const icon = L.divIcon({ html: markerHtml, className: 'custom-marker' });
-                
+
                 // Create marker
                 const marker = L.marker([result.latitude, result.longitude], { icon })
                     .addTo(isViolation ? violationsLayer : signalsLayer);
-                
+
                 // Compile popup content
                 let popupContent = `
                     <div class="popup-content">
@@ -787,15 +787,15 @@
                         </table>
                     </div>
                 `;
-                
+
                 // Add popup
                 marker.bindPopup(popupContent);
-                
+
                 // Add uncertainty circle for TDoA/RSSI methods
                 if (result.method === 'tdoa' || result.method === 'rssi') {
                     // Add an uncertainty circle (larger for RSSI which is less accurate)
                     const radius = result.method === 'rssi' ? 750 : 250;
-                    
+
                     const circle = L.circle([result.latitude, result.longitude], {
                         radius: radius,
                         className: isViolation ? 'violation-circle' : 'uncertainty-circle'

@@ -1,122 +1,142 @@
-# Geolocation Integration
+# Geolocation Integration Documentation
 
 ## Overview
-The `geolocation-integrated.py` script is a core component of the SDR Drone Pursuit System. It integrates GNU Radio signal processing with WebSocket-based real-time data streaming to enable geolocation and visualization of RF signals. This script processes SDR data, detects signals, and provides geolocation insights for visualization and analysis.
+
+The geolocation integration in the SDR Drone Pursuit System provides advanced capabilities for locating signal sources using Time Difference of Arrival (TDoA) and multilateration methods. This system leverages data from multiple SDR receivers to estimate the position of transmitters, enabling precise geolocation of signals and detection of unauthorized transmissions.
 
 ## Key Features
 
-1. **GNU Radio Integration**:
-   - Uses GNU Radio blocks for signal processing, including FFT, filtering, and decimation.
-   - Supports real-time spectrum analysis and signal detection.
+1. **TDoA Geolocation**:
+   - Calculates Time Difference of Arrival (TDoA) for signal measurements relative to a reference receiver.
+   - Uses TDoA data to estimate the transmitter's location with high accuracy.
 
-2. **WebSocket Communication**:
-   - Streams processed signal data to connected clients for visualization.
-   - Supports multiple WebSocket endpoints for different data streams (e.g., main data and Fosphor visualization).
+2. **Multilateration**:
+   - Combines TDoA data from multiple receivers to perform multilateration.
+   - Provides 2D or 3D geolocation based on the number of active receivers.
 
-3. **Signal Detection and Classification**:
-   - Detects signal peaks in the spectrum.
-   - Classifies signals based on spectral characteristics (e.g., bandwidth, skewness).
+3. **Hybrid Geolocation**:
+   - Combines TDoA and RSSI (Received Signal Strength Indicator) methods.
+   - Falls back to RSSI when TDoA data is insufficient.
 
-4. **Fosphor Integration**:
-   - Provides GPU-accelerated spectrum visualization using Fosphor.
+4. **Simulation Support**:
+   - Includes a `GeoSimulator` class for testing geolocation algorithms.
+   - Simulates receivers, transmitters, and signal measurements.
 
-5. **Real-Time Processing**:
-   - Processes SDR data in real-time with configurable frame rates and thresholds.
+## Backend Implementation
 
-## Configuration
+The geolocation engine is implemented in `sdr_geolocation.py` and includes the following components:
 
-The script uses a configuration dictionary (`CONFIG`) to define key parameters:
+### SDRGeolocation Class
 
-### SDR Settings
-- `sample_rate`: The sampling rate of the SDR (default: 2.048 MHz).
-- `center_freq`: The center frequency for signal processing (default: 100 MHz).
-- `gain`: The gain setting for the SDR (default: 20).
-- `fft_size`: The size of the FFT for spectrum analysis (default: 4096).
-- `frame_rate`: The frame rate for visualization updates (default: 30 FPS).
-- `decimation`: The decimation factor for reducing the sampling rate (default: 8).
+The `SDRGeolocation` class provides methods for:
 
-### WebSocket Settings
-- `port`: The port for the main WebSocket server (default: 8080).
-- `fosphor_port`: The port for the Fosphor WebSocket server (default: 8090).
+- Adding and managing SDR receivers.
+- Calculating TDoA for signal measurements.
+- Performing geolocation using TDoA, RSSI, or hybrid methods.
 
-## GNU Radio Flowgraph
+#### TDoA Calculation
 
-The `SDRFlowgraph` class defines the GNU Radio signal processing flowgraph. Key components include:
+```python
+def calculate_tdoa(self, signal_measurements: List[SignalMeasurement]) -> List[SignalMeasurement]:
+    """
+    Calculate Time Difference of Arrival (TDoA) for signal measurements
+    relative to the reference receiver.
+    """
+    # Implementation details...
+```
 
-1. **SDR Source**:
-   - Configures the SDR hardware (e.g., RTL-SDR) for data acquisition.
+#### TDoA Geolocation
 
-2. **Decimation**:
-   - Reduces the sampling rate for more efficient processing.
+```python
+def geolocate_tdoa(self, signal_measurements: List[SignalMeasurement]) -> Optional[Tuple[float, float, float]]:
+    """
+    Geolocate a signal source using Time Difference of Arrival (TDoA).
+    """
+    # Implementation details...
+```
 
-3. **FFT**:
-   - Performs Fast Fourier Transform for spectrum analysis.
+#### Hybrid Geolocation
 
-4. **Magnitude Squared and Log Conversion**:
-   - Converts complex FFT output to magnitude squared and applies log scaling for dB representation.
+```python
+def geolocate_hybrid(self, signal_measurements: List[SignalMeasurement]) -> Optional[Tuple[float, float, float]]:
+    """
+    Hybrid geolocation using both TDoA and RSSI data when available.
+    """
+    # Implementation details...
+```
 
-5. **Threshold and Peak Detection**:
-   - Identifies signal peaks above a configurable threshold.
+### GeoSimulator Class
 
-6. **Fosphor Visualization**:
-   - Integrates Fosphor for GPU-accelerated spectrum visualization.
+The `GeoSimulator` class provides methods for:
 
-## Signal Processing
+- Generating simulated SDR receivers around a center point.
+- Simulating signal measurements for a transmitter.
 
-The `SignalProcessor` class manages the GNU Radio flowgraph and WebSocket communication. Key methods include:
+#### Example Usage
 
-### `start`
-Starts the GNU Radio flowgraph and WebSocket servers for real-time data streaming.
+```python
+async def main():
+    simulator = GeoSimulator()
+    receivers = simulator.generate_receivers(37.7749, -122.4194, 10, 5)
+    measurements = simulator.simulate_signal(37.8199, -122.4783, 0.0, 100e6, 1.0, receivers)
+    # Add measurements to geolocation engine...
+```
 
-### `handle_client`
-Handles WebSocket connections for the main data stream. Processes FFT data and broadcasts it to connected clients.
+## Frontend Integration
 
-### `handle_fosphor_client`
-Handles WebSocket connections for Fosphor visualization data.
+The frontend visualizes geolocation results on a map using `map-visualization.html`. Key features include:
 
-### `process_fft_data`
-Processes FFT data to detect signals and classify them based on spectral characteristics. Returns a dictionary containing:
-- Frequencies
-- Amplitudes
-- Detected signals
-- Timestamp
+1. **Geolocation Markers**:
+   - Displays markers for estimated transmitter locations.
+   - Differentiates between legal signals and violations using colors and animations.
 
-### `find_peaks`
-Detects signal peaks in the FFT data using a simple peak detection algorithm.
+2. **Uncertainty Circles**:
+   - Adds circles to represent the uncertainty of TDoA and RSSI estimates.
+   - Larger circles for RSSI (less accurate) and smaller for TDoA.
 
-### `classify_signals`
-Classifies detected signals based on spectral features such as bandwidth, power, and skewness. Supported modulation types include:
-- CW (Continuous Wave)
-- SSB (Single Sideband)
-- AM (Amplitude Modulation)
-- PSK (Phase Shift Keying)
-- FM (Frequency Modulation)
-- FSK (Frequency Shift Keying)
+3. **Single Receiver Estimates**:
+   - Displays polygons for possible transmitter locations when only one receiver is available.
 
-## Example Workflow
+4. **Dynamic Updates**:
+   - Clears and redraws markers and circles based on incoming geolocation results.
 
-1. **Start the Script**:
-   ```bash
-   python geolocation-integrated.py
-   ```
+### Example Visualization Code
 
-2. **Connect to WebSocket**:
-   - Main data stream: `ws://localhost:8080`
-   - Fosphor visualization: `ws://localhost:8090`
+```javascript
+function updateGeolocation(geoResults) {
+    geoResults.forEach(result => {
+        if (result.method === 'tdoa' || result.method === 'rssi') {
+            const circle = L.circle([result.latitude, result.longitude], {
+                radius: result.method === 'rssi' ? 750 : 250,
+                className: 'uncertainty-circle'
+            }).addTo(map);
+        }
+    });
+}
+```
 
-3. **Visualize Data**:
-   - Use a WebSocket client or visualization tool to display the spectrum and detected signals.
+## Usage
+
+1. Add SDR receivers to the geolocation engine using the `add_receiver` method.
+2. Collect signal measurements from SDR receivers.
+3. Use the `calculate_tdoa` method to compute TDoA values.
+4. Perform geolocation using `geolocate_tdoa`, `geolocate_rssi`, or `geolocate_hybrid`.
+5. Visualize the results on the map using the frontend.
 
 ## Future Enhancements
 
 1. **Advanced Geolocation**:
-   - Integrate Time Difference of Arrival (TDOA) or multilateration for precise geolocation.
+   - Add support for TDoA and multilateration methods.
+   - Improve accuracy with additional receivers and better algorithms.
 
-2. **Improved Modulation Classification**:
-   - Use machine learning models for more accurate signal classification.
+2. **Signal Filtering**:
+   - Allow users to filter signals by frequency, modulation, or power.
 
-3. **Dynamic Configuration**:
-   - Allow runtime updates to configuration parameters via WebSocket commands.
+3. **Historical Data**:
+   - Enable playback of past signal and violation data.
 
-4. **Enhanced Visualization**:
-   - Add support for 3D spectrum visualization and interactive controls.
+4. **Mobile Support**:
+   - Optimize the interface for smaller screens.
+
+5. **Custom Map Layers**:
+   - Add satellite imagery or heatmaps for better visualization.

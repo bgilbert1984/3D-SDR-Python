@@ -101,6 +101,83 @@ async function checkServiceStatus() {
     }
 }
 
+// Add functions for starting and stopping all services
+async function startAllServices() {
+    debugLog('Starting all services...');
+    
+    // Start Node.js relay first
+    try {
+        const relayResponse = await fetch('/api/start-relay', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        });
+        const relayData = await relayResponse.json();
+        if (relayData.success) {
+            serviceStatus.nodeRelay = true;
+            debugLog(`Node.js Relay: ${relayData.message}`);
+        } else {
+            debugLog(`Error starting relay: ${relayData.error}`);
+        }
+    } catch (error) {
+        debugLog(`Error starting relay: ${error}`);
+    }
+    
+    // Wait a moment for the relay to initialize
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Start SDR Sim
+    try {
+        const sdrResponse = await fetch('/api/start-sdr-sim', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ type: 'sim' })
+        });
+        const sdrData = await sdrResponse.json();
+        if (sdrData.success) {
+            serviceStatus.pythonSdr = true;
+            debugLog(`SDR Sim: ${sdrData.message}`);
+        } else {
+            debugLog(`Error starting SDR Sim: ${sdrData.error}`);
+        }
+    } catch (error) {
+        debugLog(`Error starting SDR Sim: ${error}`);
+    }
+    
+    updateStatusIndicators();
+}
+
+async function stopAllServices() {
+    debugLog('Stopping all services...');
+    
+    try {
+        const response = await fetch('/api/stop-all-services', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        });
+        const data = await response.json();
+        if (data.success) {
+            serviceStatus.pythonSdr = false;
+            serviceStatus.nodeRelay = false;
+            serviceStatus.websdrBridge = false;
+            debugLog(`All services stopped: ${data.message}`);
+        } else {
+            debugLog(`Error stopping services: ${data.error}`);
+        }
+        
+        updateStatusIndicators();
+    } catch (error) {
+        debugLog(`Error stopping services: ${error}`);
+    }
+}
+
 // DOM Elements
 const statsEl = document.getElementById('stats');
 const pointSizeControl = document.getElementById('pointSize');
@@ -287,6 +364,131 @@ function animate() {
 // Start animation loop
 animate();
 
+// Add KiwiSDR connect/disconnect functions
+async function connectKiwiSDR(serverAddress, port, frequency) {
+    try {
+        const response = await fetch('/api/connect-kiwisdr', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                server_address: serverAddress,
+                port: port,
+                frequency: frequency
+            })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            serviceStatus.kiwiSdr = true;
+            updateStatusIndicators();
+            return { success: true, message: data.message };
+        } else {
+            return { success: false, error: data.error };
+        }
+    } catch (error) {
+        console.error("Error connecting to KiwiSDR:", error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function disconnectKiwiSDR() {
+    try {
+        const response = await fetch('/api/disconnect-kiwisdr', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            serviceStatus.kiwiSdr = false;
+            updateStatusIndicators();
+            return { success: true, message: data.message };
+        } else {
+            return { success: false, error: data.error };
+        }
+    } catch (error) {
+        console.error("Error disconnecting from KiwiSDR:", error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Handle signal filtering
+async function applyFilters() {
+    const frequencyMin = parseFloat(document.getElementById('filter-frequency-min').value) || null;
+    const frequencyMax = parseFloat(document.getElementById('filter-frequency-max').value) || null;
+    const modulation = document.getElementById('filter-modulation').value || null;
+    const powerMin = parseFloat(document.getElementById('filter-power-min').value) || null;
+    const powerMax = parseFloat(document.getElementById('filter-power-max').value) || null;
+
+    try {
+        const response = await fetch(`/api/get-historical-data?` +
+            new URLSearchParams({
+                frequency_min: frequencyMin,
+                frequency_max: frequencyMax,
+                modulation: modulation,
+                power_min: powerMin,
+                power_max: powerMax
+            }), {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+        debugLog(`Filtered Data: ${JSON.stringify(data)}`);
+        updateVisualization(data.signals, data.violations);
+    } catch (error) {
+        console.error('Error applying filters:', error);
+        debugLog(`Error applying filters: ${error}`);
+    }
+}
+
+// Handle historical data playback
+async function startPlayback() {
+    const startTime = document.getElementById('playback-start-time').value;
+    const endTime = document.getElementById('playback-end-time').value;
+
+    try {
+        const response = await fetch(`/api/get-historical-data?` +
+            new URLSearchParams({
+                start_time: startTime,
+                end_time: endTime
+            }), {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+        debugLog(`Playback Data: ${JSON.stringify(data)}`);
+        playbackVisualization(data.signals, data.violations);
+    } catch (error) {
+        console.error('Error starting playback:', error);
+        debugLog(`Error starting playback: ${error}`);
+    }
+}
+
+// Update visualization with filtered data
+function updateVisualization(signals, violations) {
+    // Clear existing markers and add new ones based on filtered data
+    console.log('Updating visualization with filtered data:', signals, violations);
+    // Implementation for updating the map or 3D visualization
+}
+
+// Playback visualization
+function playbackVisualization(signals, violations) {
+    // Iterate through historical data and visualize it sequentially
+    console.log('Playing back historical data:', signals, violations);
+    // Implementation for animating historical data playback
+}
+
 // Set up button click handlers
 document.addEventListener('DOMContentLoaded', () => {
     // RF Simulations
@@ -331,6 +533,63 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('kiwisdr-modal').style.display = 'none';
     });
 
+    // Connect button
+    document.getElementById('kiwisdr-connect').addEventListener('click', async () => {
+        const serverAddress = document.getElementById('server_address').value;
+        const port = parseInt(document.getElementById('port').value);
+        const frequency = parseFloat(document.getElementById('frequency').value);
+        
+        debugLog(`KiwiSDR Connect clicked - Server: ${serverAddress}, Port: ${port}, Freq: ${frequency}kHz`);
+        
+        // Update status display
+        const statusElement = document.getElementById('kiwisdr-status');
+        statusElement.textContent = `Attempting to connect to ${serverAddress}:${port} at ${frequency}kHz...`;
+        
+        // Disable connect button and enable disconnect button
+        document.getElementById('kiwisdr-connect').disabled = true;
+        document.getElementById('kiwisdr-disconnect').disabled = false;
+        
+        // Try to connect to KiwiSDR
+        const result = await connectKiwiSDR(serverAddress, port, frequency);
+        
+        if (result.success) {
+            debugLog(`KiwiSDR connected: ${result.message}`);
+            statusElement.textContent = `Connected: ${result.message}`;
+        } else {
+            debugLog(`KiwiSDR connection failed: ${result.error}`);
+            statusElement.textContent = `Connection failed: ${result.error}`;
+            // Re-enable connect button if connection failed
+            document.getElementById('kiwisdr-connect').disabled = false;
+            document.getElementById('kiwisdr-disconnect').disabled = true;
+        }
+    });
+    
+    // Disconnect button
+    document.getElementById('kiwisdr-disconnect').addEventListener('click', async () => {
+        debugLog('KiwiSDR Disconnect clicked');
+        
+        // Disable disconnect button
+        document.getElementById('kiwisdr-disconnect').disabled = true;
+        
+        // Try to disconnect from KiwiSDR
+        const result = await disconnectKiwiSDR();
+        
+        // Update status display
+        const statusElement = document.getElementById('kiwisdr-status');
+        
+        if (result.success) {
+            debugLog(`KiwiSDR disconnected: ${result.message}`);
+            statusElement.textContent = `Disconnected: ${result.message}`;
+        } else {
+            debugLog(`KiwiSDR disconnect failed: ${result.error}`);
+            statusElement.textContent = `Disconnect failed: ${result.error}`;
+        }
+        
+        // Re-enable connect button
+        document.getElementById('kiwisdr-connect').disabled = false;
+        document.getElementById('kiwisdr-disconnect').disabled = true;
+    });
+
     // Close modal when clicking outside
     window.addEventListener('click', (event) => {
         const modal = document.getElementById('kiwisdr-modal');
@@ -339,6 +598,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
+    // Service controls
+    document.getElementById('btn-start-all').addEventListener('click', () => {
+        debugLog('Start All Services button clicked');
+        startAllServices();
+    });
+    
+    document.getElementById('btn-stop-all').addEventListener('click', () => {
+        debugLog('Stop All button clicked');
+        stopAllServices();
+    });
+    
+    // Setup polling for service status updates every 5 seconds
+    setInterval(checkServiceStatus, 5000);
+    
     // Initial status check
     checkServiceStatus();
+
+    // Add event listeners for new controls
+    document.getElementById('apply-filters').addEventListener('click', applyFilters);
+    document.getElementById('start-playback').addEventListener('click', startPlayback);
 });

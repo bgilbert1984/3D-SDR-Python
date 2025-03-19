@@ -187,9 +187,174 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+## Web Interface Integration
+
+The system now includes a user-friendly web interface for connecting to KiwiSDR stations. This interface allows users to:
+
+1. Input KiwiSDR server connection details
+2. Connect to specific KiwiSDR instances
+3. Visualize signal data in the 3D environment
+4. Monitor connection status
+
+### KiwiSDR Modal
+
+The system features a modal dialog for KiwiSDR connection settings:
+
+- **Server Address**: Input field for the KiwiSDR server hostname or IP
+- **Port**: Input field for the server port (default: 8073)
+- **Frequency**: Input field for the target frequency in kHz
+- **Status Area**: Displays connection status and error messages
+- **Connect/Disconnect Buttons**: Control the connection state
+
+The modal is accessible by clicking the "KiwiSDR" button in the control panel.
+
+### Connection Process
+
+When a user connects to a KiwiSDR instance:
+
+1. The frontend sends a request to the `/api/connect-kiwisdr` endpoint with connection parameters
+2. The backend creates a KiwiSDR client and establishes a connection
+3. Data from the KiwiSDR is streamed through the WebSocket relay to the frontend
+4. The 3D visualization displays the signal data in real-time
+5. Connection status is reflected in both the modal and status indicators
+
+### Backend Implementation
+
+The FastAPI backend implements several endpoints for KiwiSDR management:
+
+```python
+@app.post("/api/connect-kiwisdr")
+async def connect_kiwisdr(request: KiwiSDRConnectRequest, background_tasks: BackgroundTasks):
+    """Connect to a KiwiSDR instance"""
+    global kiwisdr_client, kiwisdr_task
+    
+    # Stop any existing KiwiSDR connection
+    if kiwisdr_task:
+        kiwisdr_task.cancel()
+        await asyncio.sleep(0.5)  # Give it time to clean up
+    
+    try:
+        # Create a queue for communicating with the websocket
+        websocket_queue = asyncio.Queue()
+        
+        # Start the KiwiSDR streaming task
+        kiwisdr_task = asyncio.create_task(
+            kiwisdr_streaming_task(
+                request.server_address, 
+                request.port, 
+                request.frequency,
+                websocket_queue
+            )
+        )
+        
+        return {
+            "success": True,
+            "message": f"Connected to KiwiSDR at {request.server_address}:{request.port} on frequency {request.frequency} kHz"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to connect to KiwiSDR: {str(e)}"
+        }
+
+@app.post("/api/disconnect-kiwisdr")
+async def disconnect_kiwisdr():
+    """Disconnect from KiwiSDR"""
+    global kiwisdr_client, kiwisdr_task
+    
+    if kiwisdr_task:
+        kiwisdr_task.cancel()
+        kiwisdr_task = None
+        kiwisdr_client = None
+        return {"success": True, "message": "Disconnected from KiwiSDR"}
+    else:
+        return {"success": True, "message": "No active KiwiSDR connection to disconnect"}
+```
+
+The backend manages the KiwiSDR connection in a background task that:
+
+1. Creates a KiwiSDR client instance
+2. Connects to the specified server
+3. Continuously fetches data at the specified frequency
+4. Formats the data for visualization
+5. Forwards the data through the WebSocket connection
+
+### Frontend Implementation
+
+The frontend JavaScript handles KiwiSDR connections with these functions:
+
+```javascript
+async function connectKiwiSDR(serverAddress, port, frequency) {
+    try {
+        const response = await fetch('/api/connect-kiwisdr', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                server_address: serverAddress,
+                port: port,
+                frequency: frequency
+            })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            serviceStatus.kiwiSdr = true;
+            updateStatusIndicators();
+            return { success: true, message: data.message };
+        } else {
+            return { success: false, error: data.error };
+        }
+    } catch (error) {
+        console.error("Error connecting to KiwiSDR:", error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function disconnectKiwiSDR() {
+    // Implementation of KiwiSDR disconnection...
+}
+```
+
+## Using the KiwiSDR Interface
+
+To connect to a KiwiSDR station:
+
+1. Click the "KiwiSDR" button in the SDR Sources section of the control panel
+2. Enter the server address (e.g., `kiwisdr.example.com`)
+3. Enter the port number (default: 8073)
+4. Enter the frequency in kHz (e.g., 7100 for 40m amateur band)
+5. Click "Connect"
+6. Monitor the status in the modal and debug output area
+7. To disconnect, click "Disconnect" in the modal or "Stop All" in the control panel
+
+## Streaming Process
+
+When connected, the KiwiSDR client:
+
+1. Retrieves signal data from the specified station
+2. Extracts frequency and signal strength information
+3. Formats the data for visualization
+4. Sends the data through the WebSocket relay at regular intervals
+5. The 3D visualization updates to display the incoming signal data
+
+## Error Handling
+
+The KiwiSDR implementation includes robust error handling:
+
+- Connection failures are reported in the modal status area
+- Automatic cleanup of failed connections
+- Graceful disconnection when closing the application
+- Visual feedback of connection state through status indicators
+
 ## Future Enhancements
 
 1. **Improved Error Handling**: Add retries for failed requests.
 2. **Station Filtering**: Allow filtering by geographic region or signal quality.
 3. **Data Caching**: Cache station data to reduce API calls.
 4. **Advanced Geolocation**: Use TDOA or multilateration for precise signal source tracking.
+5. **Multiple Stations**: Connect to multiple KiwiSDR stations simultaneously for comparative analysis.
+6. **Frequency Scanning**: Add support for scanning frequency ranges.
+7. **Preset Management**: Save and load favorite KiwiSDR stations and frequencies.
+8. **Audio Integration**: Add WebAudio support to listen to signals while visualizing.

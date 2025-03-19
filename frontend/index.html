@@ -307,6 +307,52 @@
             </div>
         </div>
     </div>
+
+    <div id="filter-controls" class="control-panel">
+        <h3>Signal Filtering</h3>
+        <div class="control-row">
+            <label for="filter-frequency-min">Min Frequency (MHz):</label>
+            <input type="number" id="filter-frequency-min" step="0.1">
+        </div>
+        <div class="control-row">
+            <label for="filter-frequency-max">Max Frequency (MHz):</label>
+            <input type="number" id="filter-frequency-max" step="0.1">
+        </div>
+        <div class="control-row">
+            <label for="filter-modulation">Modulation:</label>
+            <select id="filter-modulation">
+                <option value="">All</option>
+                <option value="AM">AM</option>
+                <option value="FM">FM</option>
+                <option value="LSB">LSB</option>
+                <option value="USB">USB</option>
+                <option value="CW">CW</option>
+            </select>
+        </div>
+        <div class="control-row">
+            <label for="filter-power-min">Min Power:</label>
+            <input type="number" id="filter-power-min" step="0.01" min="0" max="1">
+        </div>
+        <div class="control-row">
+            <label for="filter-power-max">Max Power:</label>
+            <input type="number" id="filter-power-max" step="0.01" min="0" max="1">
+        </div>
+        <button id="apply-filters">Apply Filters</button>
+    </div>
+
+    <div id="playback-controls" class="control-panel">
+        <h3>Historical Data Playback</h3>
+        <div class="control-row">
+            <label for="playback-start-time">Start Time:</label>
+            <input type="datetime-local" id="playback-start-time">
+        </div>
+        <div class="control-row">
+            <label for="playback-end-time">End Time:</label>
+            <input type="datetime-local" id="playback-end-time">
+        </div>
+        <button id="start-playback">Start Playback</button>
+    </div>
+
     <script type="module" src="script.js"></script>
 </body>
 </html>
