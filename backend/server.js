@@ -15,28 +15,55 @@ const wss = new WebSocket.Server({ port: WSS_PORT });
 console.log(`WebSocket Server running on port ${WSS_PORT}`);
 
 // Connect to Python SDR WebSocket
-const sdrSocket = new WebSocket("ws://localhost:8765");
+let sdrSocket = null;
 
-sdrSocket.on("message", (data) => {
-    console.log("Received SDR Data:", data.length, "bytes");
-
-    // Broadcast to all connected clients
-    wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(data);
-        }
-    });
-});
-
-// Handle connection errors
-sdrSocket.on("error", (error) => {
-    console.error("WebSocket Error:", error.message);
-    // Try to reconnect after a delay
-    setTimeout(() => {
-        console.log("Attempting to reconnect to Python WebSocket...");
-        sdrSocket.close();
+function connectToSDR() {
+    try {
         sdrSocket = new WebSocket("ws://localhost:8765");
-    }, 5000);
-});
+        
+        sdrSocket.on("open", () => {
+            console.log("Successfully connected to Python SDR WebSocket");
+        });
 
+        sdrSocket.on("message", (data) => {
+            console.log("Received SDR Data:", data.length, "bytes");
+            // Broadcast to all connected clients
+            wss.clients.forEach((client) => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(data);
+                }
+            });
+        });
+
+        // Handle connection errors
+        sdrSocket.on("error", (error) => {
+            console.error("WebSocket Error:", error.message);
+            setTimeout(reconnectToSDR, 5000);
+        });
+
+        sdrSocket.on("close", () => {
+            console.log("SDR WebSocket connection closed");
+            setTimeout(reconnectToSDR, 5000);
+        });
+    } catch (error) {
+        console.error("Error creating WebSocket connection:", error);
+        setTimeout(reconnectToSDR, 5000);
+    }
+}
+
+function reconnectToSDR() {
+    console.log("Attempting to reconnect to Python WebSocket...");
+    if (sdrSocket) {
+        sdrSocket.removeAllListeners();
+        try {
+            sdrSocket.terminate();
+        } catch (error) {
+            console.error("Error closing existing connection:", error);
+        }
+    }
+    connectToSDR();
+}
+
+// Initial connection
+connectToSDR();
 console.log("SDR WebSocket Relay initialized. Waiting for connections...");

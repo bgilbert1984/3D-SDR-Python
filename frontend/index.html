@@ -38,6 +38,9 @@
             padding: 15px;
             border-radius: 5px;
             width: 300px;
+            display: flex;
+            flex-direction: column;
+            max-height: 90vh;
         }
         .control-group {
             margin-bottom: 15px;
@@ -71,6 +74,18 @@
         }
         .btn-stop:hover {
             background-color: #e74c3c;
+        }
+        #debug-output {
+            background-color: rgba(0,0,0,0.5);
+            color: #33ff33;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            height: 150px;
+            overflow-y: auto;
+            margin-top: 10px;
+            border: 1px solid #444;
+            flex-shrink: 0;
         }
         .status-indicator {
             display: inline-block;
@@ -133,6 +148,7 @@
             <button id="btn-start-all" class="btn">Start All Services</button>
             <button id="btn-stop-all" class="btn btn-stop">Stop All</button>
         </div>
+        <div id="debug-output"></div>
     </div>
     
     <div id="controls">
@@ -279,58 +295,84 @@
             updateStatusIndicators();
         }
         
+        // Debug logging function
+        function debugLog(message) {
+            const debugOutput = document.getElementById('debug-output');
+            const timestamp = new Date().toLocaleTimeString();
+            debugOutput.innerHTML += `[${timestamp}] ${message}\n`;
+            debugOutput.scrollTop = debugOutput.scrollHeight; // Auto-scroll to bottom
+        }
+        
         // Set up button click handlers
         document.addEventListener('DOMContentLoaded', () => {
             // RF Simulations
             document.getElementById('btn-rf-basic').addEventListener('click', () => {
+                debugLog('Simple RF Sim button clicked');
                 sendServiceCommand('start_simulation', { type: 'basic' });
             });
             
             document.getElementById('btn-rf-complex').addEventListener('click', () => {
+                debugLog('Complex RF Sim button clicked');
                 sendServiceCommand('start_simulation', { type: 'complex' });
             });
             
             document.getElementById('btn-rf-fcc').addEventListener('click', () => {
+                debugLog('FCC Violations button clicked');
                 sendServiceCommand('start_simulation', { type: 'fcc_violations' });
             });
             
             document.getElementById('btn-rf-emp').addEventListener('click', () => {
+                debugLog('EMP Simulation button clicked');
                 sendServiceCommand('start_simulation', { type: 'emp' });
             });
             
             // SDR Sources
             document.getElementById('btn-sdr-sim').addEventListener('click', () => {
+                debugLog('SDR Simulator button clicked');
                 startPythonSdrSim();
             });
             
             document.getElementById('btn-sdr-rtl').addEventListener('click', () => {
+                debugLog('RTL-SDR button clicked');
                 sendServiceCommand('start_rtlsdr');
             });
             
             document.getElementById('btn-sdr-kiwi').addEventListener('click', () => {
+                debugLog('KiwiSDR button clicked');
                 sendServiceCommand('start_kiwisdr');
             });
             
             document.getElementById('btn-sdr-websdr').addEventListener('click', () => {
+                debugLog('WebSDR button clicked');
                 startWebsdrBridge();
             });
             
             // Drone Simulations
             document.getElementById('btn-drone-single').addEventListener('click', () => {
+                debugLog('Single Drone button clicked');
                 sendServiceCommand('start_drone', { type: 'single' });
             });
             
             document.getElementById('btn-drone-swarm').addEventListener('click', () => {
+                debugLog('Drone Swarm button clicked');
                 sendServiceCommand('start_drone', { type: 'swarm' });
             });
             
             document.getElementById('btn-drone-pursuit').addEventListener('click', () => {
+                debugLog('Pursuit Mode button clicked');
                 sendServiceCommand('start_drone', { type: 'pursuit' });
             });
             
             // Service controls
-            document.getElementById('btn-start-all').addEventListener('click', startAllServices);
-            document.getElementById('btn-stop-all').addEventListener('click', stopAllServices);
+            document.getElementById('btn-start-all').addEventListener('click', () => {
+                debugLog('Start All Services button clicked');
+                startAllServices();
+            });
+            
+            document.getElementById('btn-stop-all').addEventListener('click', () => {
+                debugLog('Stop All button clicked');
+                stopAllServices();
+            });
             
             // Initial status check
             checkServiceStatus();
