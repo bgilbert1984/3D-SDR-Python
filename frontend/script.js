@@ -619,3 +619,166 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('apply-filters').addEventListener('click', applyFilters);
     document.getElementById('start-playback').addEventListener('click', startPlayback);
 });
+
+// Event listeners for RF Simulations
+const btnRfBasic = document.getElementById('btn-rf-basic');
+const btnRfComplex = document.getElementById('btn-rf-complex');
+const btnRfFcc = document.getElementById('btn-rf-fcc');
+const btnRfEmp = document.getElementById('btn-rf-emp');
+
+btnRfBasic.addEventListener('click', () => {
+    fetch('/api/start-rf-simulation', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'basic' }),
+        headers: { 'Content-Type': 'application/json' }
+    });
+});
+
+btnRfComplex.addEventListener('click', () => {
+    fetch('/api/start-rf-simulation', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'complex' }),
+        headers: { 'Content-Type': 'application/json' }
+    });
+});
+
+btnRfFcc.addEventListener('click', () => {
+    fetch('/api/start-rf-simulation', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'fcc' }),
+        headers: { 'Content-Type': 'application/json' }
+    });
+});
+
+btnRfEmp.addEventListener('click', () => {
+    fetch('/api/start-rf-simulation', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'emp' }),
+        headers: { 'Content-Type': 'application/json' }
+    });
+});
+
+// Event listeners for SDR Sources
+const btnSdrSim = document.getElementById('btn-sdr-sim');
+const btnSdrRtl = document.getElementById('btn-sdr-rtl');
+const btnSdrKiwi = document.getElementById('btn-sdr-kiwi');
+const btnSdrWebsdr = document.getElementById('btn-sdr-websdr');
+
+btnSdrSim.addEventListener('click', () => {
+    fetch('/api/start-sdr-simulator', { method: 'POST' });
+});
+
+btnSdrRtl.addEventListener('click', () => {
+    fetch('/api/start-rtl-sdr', { method: 'POST' });
+});
+
+btnSdrKiwi.addEventListener('click', () => {
+    fetch('/api/start-kiwisdr', { method: 'POST' });
+});
+
+btnSdrWebsdr.addEventListener('click', () => {
+    fetch('/api/start-websdr', { method: 'POST' });
+});
+
+// Event listeners for Drone Simulations
+const btnDroneSingle = document.getElementById('btn-drone-single');
+const btnDroneSwarm = document.getElementById('btn-drone-swarm');
+const btnDronePursuit = document.getElementById('btn-drone-pursuit');
+
+btnDroneSingle.addEventListener('click', () => {
+    fetch('/api/start-drone-simulation', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'single' }),
+        headers: { 'Content-Type': 'application/json' }
+    });
+});
+
+btnDroneSwarm.addEventListener('click', () => {
+    fetch('/api/start-drone-simulation', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'swarm' }),
+        headers: { 'Content-Type': 'application/json' }
+    });
+});
+
+btnDronePursuit.addEventListener('click', () => {
+    fetch('/api/start-drone-simulation', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'pursuit' }),
+        headers: { 'Content-Type': 'application/json' }
+    });
+});
+
+// Event listeners for Service Controls
+const btnStartAll = document.getElementById('btn-start-all');
+const btnStopAll = document.getElementById('btn-stop-all');
+
+btnStartAll.addEventListener('click', () => {
+    fetch('/api/start-all-services', { method: 'POST' });
+});
+
+btnStopAll.addEventListener('click', () => {
+    fetch('/api/stop-all-services', { method: 'POST' });
+});
+
+// Event listeners for Signal Filtering
+const btnApplyFilters = document.getElementById('apply-filters');
+btnApplyFilters.addEventListener('click', () => {
+    const minFreq = document.getElementById('filter-frequency-min').value;
+    const maxFreq = document.getElementById('filter-frequency-max').value;
+    const modulation = document.getElementById('filter-modulation').value;
+    const minPower = document.getElementById('filter-power-min').value;
+    const maxPower = document.getElementById('filter-power-max').value;
+
+    fetch('/api/apply-filters', {
+        method: 'POST',
+        body: JSON.stringify({
+            minFreq,
+            maxFreq,
+            modulation,
+            minPower,
+            maxPower
+        }),
+        headers: { 'Content-Type': 'application/json' }
+    });
+});
+
+// Event listeners for Historical Data Playback
+const btnStartPlayback = document.getElementById('start-playback');
+const btnStopPlayback = document.getElementById('stop-playback');
+
+btnStartPlayback.addEventListener('click', () => {
+    const startTime = document.getElementById('playback-start-time').value;
+    const endTime = document.getElementById('playback-end-time').value;
+    const speed = document.getElementById('playback-speed').value;
+
+    fetch('/api/start-playback', {
+        method: 'POST',
+        body: JSON.stringify({ startTime, endTime, speed }),
+        headers: { 'Content-Type': 'application/json' }
+    });
+});
+
+btnStopPlayback.addEventListener('click', () => {
+    fetch('/api/stop-playback', { method: 'POST' });
+});
+
+// Event listeners for Geolocation Settings
+const btnTestGeolocation = document.getElementById('test-geolocation');
+btnTestGeolocation.addEventListener('click', () => {
+    const method = document.getElementById('geolocation-method').value;
+    const minReceivers = document.getElementById('min-receivers').value;
+    const confidence = document.getElementById('confidence-level').value;
+    const showUncertainty = document.getElementById('show-uncertainty').checked;
+
+    fetch('/api/test-geolocation', {
+        method: 'POST',
+        body: JSON.stringify({
+            method,
+            minReceivers,
+            confidence,
+            showUncertainty
+        }),
+        headers: { 'Content-Type': 'application/json' }
+    });
+});
