@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 websockets>=10.0
-pyrtlsdr
+pyrtlsdr>=0.2.9  # RTL-SDR library
 numpy>=1.20.0
 scipy>=1.7.0
 haversine
@@ -19,5 +19,4 @@ scikit-learn>=0.24.0
 cupy-cuda11x>=11.0.0  # For CUDA 11.x, adjust version as needed
 pymongo>=4.0.0  # Optional: for database logging
 aiohttp>=3.8.0
-rtlsdr>=0.2.9  # RTL-SDR library
 aiodns>=3.0.0  # Optional: for faster DNS resolution with aiohttp

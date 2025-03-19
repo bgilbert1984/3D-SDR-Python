@@ -16,6 +16,7 @@
             background-color: rgba(0,0,0,0.5);
             padding: 10px;
             border-radius: 5px;
+            max-width: 350px;
         }
         #controls {
             position: absolute;
@@ -27,6 +28,62 @@
             padding: 10px;
             border-radius: 5px;
         }
+        #simulation-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-family: monospace;
+            background-color: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 5px;
+            width: 300px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+        .btn {
+            background-color: #2a70a0;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            margin: 4px 2px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: monospace;
+            transition: background-color 0.3s;
+            width: calc(50% - 4px);
+        }
+        .btn:hover {
+            background-color: #3498db;
+        }
+        .btn-active {
+            background-color: #27ae60;
+        }
+        .btn-stop {
+            background-color: #c0392b;
+        }
+        .btn-stop:hover {
+            background-color: #e74c3c;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            background-color: #7f8c8d;
+        }
+        .status-active {
+            background-color: #2ecc71;
+            box-shadow: 0 0 6px #2ecc71;
+        }
     </style>
 </head>
 <body>
@@ -34,15 +91,250 @@
         <h2>Live SDR 3D Visualization</h2>
         <div id="stats">Connection: Waiting...</div>
     </div>
+    
+    <div id="simulation-panel">
+        <div class="control-group">
+            <h3>RF Simulations</h3>
+            <button id="btn-rf-basic" class="btn">Simple RF Sim</button>
+            <button id="btn-rf-complex" class="btn">Complex RF Sim</button>
+            <button id="btn-rf-fcc" class="btn">FCC Violations</button>
+            <button id="btn-rf-emp" class="btn">EMP Simulation</button>
+        </div>
+        
+        <div class="control-group">
+            <h3>SDR Sources</h3>
+            <button id="btn-sdr-sim" class="btn">SDR Simulator</button>
+            <button id="btn-sdr-rtl" class="btn">RTL-SDR</button>
+            <button id="btn-sdr-kiwi" class="btn">KiwiSDR</button>
+            <button id="btn-sdr-websdr" class="btn">WebSDR</button>
+        </div>
+        
+        <div class="control-group">
+            <h3>Drone Simulations</h3>
+            <button id="btn-drone-single" class="btn">Single Drone</button>
+            <button id="btn-drone-swarm" class="btn">Drone Swarm</button>
+            <button id="btn-drone-pursuit" class="btn">Pursuit Mode</button>
+        </div>
+        
+        <div class="control-group">
+            <h3>Services</h3>
+            <div style="margin-bottom: 5px;">
+                <span class="status-indicator" id="status-py-sdr"></span>
+                <label>Python SDR Sim Service</label>
+            </div>
+            <div style="margin-bottom: 5px;">
+                <span class="status-indicator" id="status-nodejs"></span>
+                <label>Node.js Relay</label>
+            </div>
+            <div style="margin-bottom: 5px;">
+                <span class="status-indicator" id="status-websdr"></span>
+                <label>WebSDR Bridge</label>
+            </div>
+            <button id="btn-start-all" class="btn">Start All Services</button>
+            <button id="btn-stop-all" class="btn btn-stop">Stop All</button>
+        </div>
+    </div>
+    
     <div id="controls">
         <label for="pointSize">Point Size: </label>
         <input type="range" id="pointSize" min="0.1" max="5" step="0.1" value="1">
         <label for="rotationSpeed">Rotation Speed: </label>
         <input type="range" id="rotationSpeed" min="0" max="0.01" step="0.0005" value="0.002">
     </div>
+    
     <!-- Use non-module script to avoid ES module import issues -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
     <script src="script.js"></script>
+    
+    <!-- Add simulation controls script -->
+    <script>
+        // Service status tracking
+        const serviceStatus = {
+            pythonSdr: false,
+            nodeRelay: false,
+            websdrBridge: false
+        };
+        
+        // Update status indicators
+        function updateStatusIndicators() {
+            document.getElementById('status-py-sdr').classList.toggle('status-active', serviceStatus.pythonSdr);
+            document.getElementById('status-nodejs').classList.toggle('status-active', serviceStatus.nodeRelay);
+            document.getElementById('status-websdr').classList.toggle('status-active', serviceStatus.websdrBridge);
+        }
+        
+        // Function to start Python SDR Simulation
+        function startPythonSdrSim() {
+            fetch('/api/start-sdr-sim', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        serviceStatus.pythonSdr = true;
+                        updateStatusIndicators();
+                        console.log('SDR Sim started:', data.message);
+                    } else {
+                        console.error('Failed to start SDR Sim:', data.error);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error starting SDR Sim:', err);
+                    // Fallback to WebSocket command if API not available
+                    sendServiceCommand('start_sdr_sim');
+                });
+        }
+        
+        // Function to start Node.js relay
+        function startNodeRelay() {
+            fetch('/api/start-relay', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        serviceStatus.nodeRelay = true;
+                        updateStatusIndicators();
+                        console.log('Node.js relay started:', data.message);
+                    } else {
+                        console.error('Failed to start relay:', data.error);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error starting relay:', err);
+                    // Try WebSocket connection to see if it's already running
+                    checkWebSocketConnection();
+                });
+        }
+        
+        // Function to start WebSDR bridge
+        function startWebsdrBridge() {
+            fetch('/api/start-websdr-bridge', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        serviceStatus.websdrBridge = true;
+                        updateStatusIndicators();
+                        console.log('WebSDR bridge started:', data.message);
+                    } else {
+                        console.error('Failed to start WebSDR bridge:', data.error);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error starting WebSDR bridge:', err);
+                    // Fallback to WebSocket command
+                    sendServiceCommand('start_websdr_bridge');
+                });
+        }
+        
+        // Send commands via WebSocket if available
+        function sendServiceCommand(command, params = {}) {
+            const ws = window.sdrWebSocket;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'service_command',
+                    command: command,
+                    params: params
+                }));
+                return true;
+            }
+            return false;
+        }
+        
+        // Check if WebSocket is already connected
+        function checkWebSocketConnection() {
+            const ws = window.sdrWebSocket;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                serviceStatus.nodeRelay = true;
+                updateStatusIndicators();
+            }
+        }
+        
+        // Check service status via API
+        function checkServiceStatus() {
+            fetch('/api/service-status')
+                .then(response => response.json())
+                .then(data => {
+                    serviceStatus.pythonSdr = data.pythonSdr || false;
+                    serviceStatus.nodeRelay = data.nodeRelay || false; 
+                    serviceStatus.websdrBridge = data.websdrBridge || false;
+                    updateStatusIndicators();
+                })
+                .catch(err => {
+                    console.error('Error checking service status:', err);
+                    // Fallback to WebSocket connection check
+                    checkWebSocketConnection();
+                });
+        }
+        
+        // Start all services
+        function startAllServices() {
+            startPythonSdrSim();
+            startNodeRelay();
+            startWebsdrBridge();
+        }
+        
+        // Stop all services
+        function stopAllServices() {
+            sendServiceCommand('stop_all_services');
+            serviceStatus.pythonSdr = false;
+            serviceStatus.nodeRelay = false;
+            serviceStatus.websdrBridge = false;
+            updateStatusIndicators();
+        }
+        
+        // Set up button click handlers
+        document.addEventListener('DOMContentLoaded', () => {
+            // RF Simulations
+            document.getElementById('btn-rf-basic').addEventListener('click', () => {
+                sendServiceCommand('start_simulation', { type: 'basic' });
+            });
+            
+            document.getElementById('btn-rf-complex').addEventListener('click', () => {
+                sendServiceCommand('start_simulation', { type: 'complex' });
+            });
+            
+            document.getElementById('btn-rf-fcc').addEventListener('click', () => {
+                sendServiceCommand('start_simulation', { type: 'fcc_violations' });
+            });
+            
+            document.getElementById('btn-rf-emp').addEventListener('click', () => {
+                sendServiceCommand('start_simulation', { type: 'emp' });
+            });
+            
+            // SDR Sources
+            document.getElementById('btn-sdr-sim').addEventListener('click', () => {
+                startPythonSdrSim();
+            });
+            
+            document.getElementById('btn-sdr-rtl').addEventListener('click', () => {
+                sendServiceCommand('start_rtlsdr');
+            });
+            
+            document.getElementById('btn-sdr-kiwi').addEventListener('click', () => {
+                sendServiceCommand('start_kiwisdr');
+            });
+            
+            document.getElementById('btn-sdr-websdr').addEventListener('click', () => {
+                startWebsdrBridge();
+            });
+            
+            // Drone Simulations
+            document.getElementById('btn-drone-single').addEventListener('click', () => {
+                sendServiceCommand('start_drone', { type: 'single' });
+            });
+            
+            document.getElementById('btn-drone-swarm').addEventListener('click', () => {
+                sendServiceCommand('start_drone', { type: 'swarm' });
+            });
+            
+            document.getElementById('btn-drone-pursuit').addEventListener('click', () => {
+                sendServiceCommand('start_drone', { type: 'pursuit' });
+            });
+            
+            // Service controls
+            document.getElementById('btn-start-all').addEventListener('click', startAllServices);
+            document.getElementById('btn-stop-all').addEventListener('click', stopAllServices);
+            
+            // Initial status check
+            checkServiceStatus();
+        });
+    </script>
 </body>
 </html>
