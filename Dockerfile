@@ -19,8 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy project files
 COPY . /app/
 
-# Install Python dependencies
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Install Python dependencies including FastAPI and uvicorn
+RUN pip3 install --no-cache-dir -r requirements.txt fastapi uvicorn
 
 # Install Node.js dependencies
 RUN cd backend && npm install
@@ -31,5 +31,5 @@ EXPOSE 8000
 # Set Python path
 ENV PYTHONPATH=/app
 
-# Command to run the application
-CMD ["node", "backend/server.js"]
+# Command to run the FastAPI application with uvicorn
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

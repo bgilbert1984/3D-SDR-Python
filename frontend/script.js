@@ -1,4 +1,105 @@
-// THREE and OrbitControls are now global objects from script includes
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+
+// Global state for service status
+const serviceStatus = {
+    pythonSdr: false,
+    nodeRelay: false,
+    websdrBridge: false
+};
+
+// Debug logging function
+function debugLog(message) {
+    const debugOutput = document.getElementById('debug-output');
+    const timestamp = new Date().toLocaleTimeString();
+    debugOutput.innerHTML += `[${timestamp}] ${message}\n`;
+    debugOutput.scrollTop = debugOutput.scrollHeight;
+}
+
+// Update status indicators
+function updateStatusIndicators() {
+    document.getElementById('status-py-sdr').classList.toggle('status-active', serviceStatus.pythonSdr);
+    document.getElementById('status-nodejs').classList.toggle('status-active', serviceStatus.nodeRelay);
+    document.getElementById('status-websdr').classList.toggle('status-active', serviceStatus.websdrBridge);
+}
+
+// Service management functions
+async function startPythonSdrSim() {
+    try {
+        const response = await fetch('/api/start-sdr-sim', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ type: 'sim' })
+        });
+        const data = await response.json();
+        debugLog(`SDR Sim Start Response: ${JSON.stringify(data)}`);
+        if (data.success) {
+            serviceStatus.pythonSdr = true;
+            updateStatusIndicators();
+        }
+    } catch (error) {
+        console.error('Error starting SDR Sim:', error);
+        debugLog(`Error starting SDR Sim: ${error}`);
+    }
+}
+
+async function startNodeRelay() {
+    try {
+        const response = await fetch('/api/start-relay', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        });
+        const data = await response.json();
+        debugLog(`Node Relay Start Response: ${JSON.stringify(data)}`);
+        if (data.success) {
+            serviceStatus.nodeRelay = true;
+            updateStatusIndicators();
+        }
+    } catch (error) {
+        console.error('Error starting relay:', error);
+        debugLog(`Error starting relay: ${error}`);
+    }
+}
+
+async function startWebsdrBridge() {
+    try {
+        const response = await fetch('/api/start-websdr-bridge', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        });
+        const data = await response.json();
+        debugLog(`WebSDR Bridge Start Response: ${JSON.stringify(data)}`);
+        if (data.success) {
+            serviceStatus.websdrBridge = true;
+            updateStatusIndicators();
+        }
+    } catch (error) {
+        console.error('Error starting WebSDR bridge:', error);
+        debugLog(`Error starting WebSDR bridge: ${error}`);
+    }
+}
+
+async function checkServiceStatus() {
+    try {
+        const response = await fetch('/api/service-status');
+        const data = await response.json();
+        serviceStatus.pythonSdr = data.pythonSdr;
+        serviceStatus.nodeRelay = data.nodeRelay;
+        serviceStatus.websdrBridge = data.websdrBridge;
+        updateStatusIndicators();
+    } catch (error) {
+        console.error('Error checking service status:', error);
+        debugLog(`Error checking service status: ${error}`);
+    }
+}
 
 // DOM Elements
 const statsEl = document.getElementById('stats');
@@ -8,6 +109,7 @@ const rotationSpeedControl = document.getElementById('rotationSpeed');
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000011);
+
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.z = 100;
 camera.position.y = 50;
@@ -18,7 +120,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
 // Add orbit controls for user interaction
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 
@@ -67,13 +169,12 @@ let rotationSpeed = parseFloat(rotationSpeedControl.value);
 
 // Color mapping function for frequency visualization
 function getColor(amplitude) {
-    // Create a color gradient based on amplitude
     if (amplitude < 0.3) {
-        return new THREE.Color(0, 0, amplitude * 3); // Blue for low amplitudes
+        return new THREE.Color(0, 0, amplitude * 3);
     } else if (amplitude < 0.6) {
-        return new THREE.Color(0, amplitude * 1.5, 1 - amplitude); // Cyan to Green transition
+        return new THREE.Color(0, amplitude * 1.5, 1 - amplitude);
     } else {
-        return new THREE.Color(amplitude, 1 - amplitude * 0.5, 0); // Green to Red for high amplitudes
+        return new THREE.Color(amplitude, 1 - amplitude * 0.5, 0);
     }
 }
 
@@ -92,47 +193,38 @@ function connectWebSocket() {
     
     socket.onmessage = async (event) => {
         try {
-            // Parse the incoming data
             let rawData = event.data;
             if (rawData instanceof Blob) {
-                // Handle Blob data
                 rawData = await new Response(rawData).text();
             } else if (rawData instanceof ArrayBuffer) {
-                // Handle ArrayBuffer data
                 rawData = new TextDecoder().decode(rawData);
             }
-            // At this point rawData should be a string
-            const data = JSON.parse(rawData.replace(/'/g, '"')); // Convert Python single quotes to JSON double quotes
+            const data = JSON.parse(rawData.replace(/'/g, '"'));
             
             const freqs = data.freqs;
             const amplitudes = data.amplitudes;
             const timestamp = data.timestamp;
             
-            // Update stats display
             statsEl.textContent = `Connection: Active | Data points: ${freqs.length} | Update: ${(timestamp - lastTimestamp).toFixed(2)}s`;
             lastTimestamp = timestamp;
             
-            // Map incoming SDR data into a 3D spiral
             const pointsToUpdate = Math.min(freqs.length, maxPoints);
             
             for (let i = 0; i < pointsToUpdate; i++) {
-                const t = (index + i) / 1000 * 40 * Math.PI; // Spiral parameter
+                const t = (index + i) / 1000 * 40 * Math.PI;
                 const amplitude = amplitudes[i];
                 const freq = freqs[i];
                 
-                // Calculate spiral coordinates
-                const r = 30 + 20 * Math.sin(t * 0.2); // Base radius plus oscillation
+                const r = 30 + 20 * Math.sin(t * 0.2);
                 const x = r * Math.cos(t) * amplitude * 2;
                 const y = r * Math.sin(t) * amplitude * 2;
-                const z = (t * 0.5) % 100; // Limit the z range to prevent going too far
+                const z = (t * 0.5) % 100;
                 
-                // Set position in buffer
                 const posIndex = (index + i) % maxPoints;
                 positions[posIndex * 3] = x;
                 positions[posIndex * 3 + 1] = y;
                 positions[posIndex * 3 + 2] = z;
                 
-                // Set color in buffer
                 const color = getColor(amplitude);
                 colors[posIndex * 3] = color.r;
                 colors[posIndex * 3 + 1] = color.g;
@@ -141,7 +233,6 @@ function connectWebSocket() {
             
             index = (index + pointsToUpdate) % maxPoints;
             
-            // Mark attributes for update
             geometry.attributes.position.needsUpdate = true;
             geometry.attributes.color.needsUpdate = true;
             
@@ -188,16 +279,66 @@ window.addEventListener('resize', () => {
 // Animation loop
 function animate() {
     requestAnimationFrame(animate);
-    
-    // Apply rotation to the point cloud for the spiral effect
     pointCloud.rotation.z += rotationSpeed;
-    
-    // Update orbit controls
     controls.update();
-    
-    // Render the scene
     renderer.render(scene, camera);
 }
 
 // Start animation loop
 animate();
+
+// Set up button click handlers
+document.addEventListener('DOMContentLoaded', () => {
+    // RF Simulations
+    document.getElementById('btn-rf-basic').addEventListener('click', () => {
+        debugLog('Simple RF Sim button clicked');
+    });
+    
+    document.getElementById('btn-rf-complex').addEventListener('click', () => {
+        debugLog('Complex RF Sim button clicked');
+    });
+    
+    document.getElementById('btn-rf-fcc').addEventListener('click', () => {
+        debugLog('FCC Violations button clicked');
+    });
+    
+    document.getElementById('btn-rf-emp').addEventListener('click', () => {
+        debugLog('EMP Simulation button clicked');
+    });
+    
+    // SDR Sources
+    document.getElementById('btn-sdr-sim').addEventListener('click', () => {
+        debugLog('SDR Simulator button clicked');
+        startPythonSdrSim();
+    });
+    
+    document.getElementById('btn-sdr-rtl').addEventListener('click', () => {
+        debugLog('RTL-SDR button clicked');
+    });
+    
+    document.getElementById('btn-sdr-kiwi').addEventListener('click', () => {
+        debugLog('KiwiSDR button clicked');
+        document.getElementById('kiwisdr-modal').style.display = 'block';
+    });
+    
+    document.getElementById('btn-sdr-websdr').addEventListener('click', () => {
+        debugLog('WebSDR button clicked');
+        startWebsdrBridge();
+    });
+
+    // KiwiSDR Modal handlers
+    document.getElementById('kiwisdr-close').addEventListener('click', () => {
+        document.getElementById('kiwisdr-modal').style.display = 'none';
+    });
+
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        const modal = document.getElementById('kiwisdr-modal');
+        if (event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+    
+    // Initial status check
+    checkServiceStatus();
+});
