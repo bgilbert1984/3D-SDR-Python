@@ -277,4 +277,4 @@ The links to component-specific documentation (e.g., Drone Control System, SDR I
 User Accessibility:
 For non-technical users (e.g., law enforcement), a simplified dashboard or guided setup process could broaden your audience.
 Conclusion
-The SDR Drone Pursuit System is an innovative and powerful tool that blends advanced technologies into a cohesive, real-time solution. Your progress is evident in the detailed feature set, robust architecture, and clear setup instructions. It’s exciting to see how this project could evolve—whether for FCC enforcement, security applications, or even search-and-rescue missions.
+The SDR Drone Pursuit System is an innovative and powerful tool that blends advanced technologies into a cohesive, real-time solution. Your progress is evident in the detailed feature set, robust architecture, and clear setup instructions. It’s exciting to see how this project could evolve—whether for FCC enforcement, security applications, or even search-and-rescue missions.# SDR-SCYTHE
