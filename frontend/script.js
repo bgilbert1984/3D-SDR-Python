@@ -782,3 +782,321 @@ btnTestGeolocation.addEventListener('click', () => {
         headers: { 'Content-Type': 'application/json' }
     });
 });
+
+// KiwiSDR Interface Handlers
+class KiwiSDRInterface {
+    constructor() {
+        this.spectrumCanvas = document.getElementById('spectrum-canvas');
+        this.spectrumCtx = this.spectrumCanvas.getContext('2d');
+        this.waterfallCanvas = document.getElementById('waterfall-canvas');
+        this.waterfallCtx = this.waterfallCanvas.getContext('2d');
+        this.isConnected = false;
+        this.currentMode = 'AM';
+        this.setupEventListeners();
+        this.waterfallDisplay = new WaterfallDisplay(document.getElementById('waterfall-canvas'));
+    }
+
+    setupEventListeners() {
+        // Mode selection
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.setMode(btn.dataset.mode);
+            });
+        });
+
+        // Band selection
+        document.getElementById('band-select').addEventListener('change', (e) => {
+            const freq = this.getBandFrequency(e.target.value);
+            document.getElementById('frequency').value = freq;
+            this.setFrequency(freq);
+        });
+
+        // Volume control
+        document.getElementById('volume').addEventListener('input', (e) => {
+            this.setVolume(e.target.value);
+        });
+
+        // Squelch control
+        document.getElementById('squelch').addEventListener('input', (e) => {
+            this.setSquelch(e.target.value);
+        });
+
+        // AGC control
+        document.getElementById('agc').addEventListener('change', (e) => {
+            this.setAGC(e.target.value);
+        });
+    }
+
+    setMode(mode) {
+        if (!this.isConnected) return;
+        fetch('/api/kiwisdr-command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: 'mode', value: mode })
+        });
+        this.currentMode = mode;
+    }
+
+    setFrequency(freq) {
+        if (!this.isConnected) return;
+        fetch('/api/kiwisdr-command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: 'frequency', value: freq })
+        });
+    }
+
+    getBandFrequency(band) {
+        const bandFreqs = {
+            '630m': 475,
+            '160m': 1900,
+            '80m': 3750,
+            '40m': 7150,
+            '30m': 10125,
+            '20m': 14175,
+            '17m': 18118,
+            '15m': 21225,
+            '12m': 24940,
+            '10m': 28850,
+            '6m': 52000
+        };
+        return bandFreqs[band] || 7150;
+    }
+
+    updateSpectrum(data) {
+        const ctx = this.spectrumCtx;
+        const width = this.spectrumCanvas.width;
+        const height = this.spectrumCanvas.height;
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.beginPath();
+        ctx.strokeStyle = '#2ecc71';
+        ctx.lineWidth = 2;
+
+        const step = width / data.length;
+        for (let i = 0; i < data.length; i++) {
+            const x = i * step;
+            const y = height - (data[i] + 120) * height / 80;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+
+    updateWaterfall(data) {
+        // Instead of using 2D canvas, use WebGL renderer
+        this.waterfallDisplay.updateTexture(data);
+        this.waterfallDisplay.render();
+    }
+
+    setVolume(value) {
+        if (!this.isConnected) return;
+        fetch('/api/kiwisdr-command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: 'volume', value: parseInt(value) })
+        });
+    }
+
+    setSquelch(value) {
+        if (!this.isConnected) return;
+        fetch('/api/kiwisdr-command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: 'squelch', value: parseInt(value) })
+        });
+    }
+
+    setAGC(value) {
+        if (!this.isConnected) return;
+        fetch('/api/kiwisdr-command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: 'agc', value: value })
+        });
+    }
+
+    processData(data) {
+        if (data.type === 'spectrum') {
+            this.updateSpectrum(data.values);
+        } else if (data.type === 'waterfall') {
+            this.updateWaterfall(data.values);
+        }
+    }
+}
+
+// Initialize KiwiSDR interface when document is ready
+let kiwiInterface;
+document.addEventListener('DOMContentLoaded', () => {
+    kiwiInterface = new KiwiSDRInterface();
+    
+    // Add to existing WebSocket message handler
+    socket.addEventListener('message', (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.source === 'kiwisdr') {
+                kiwiInterface.processData(data);
+            }
+        } catch (error) {
+            console.error('Error processing KiwiSDR data:', error);
+        }
+    });
+});
+
+class WaterfallDisplay {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.gl = canvas.getContext('webgl');
+        if (!this.gl) {
+            console.error('WebGL not supported');
+            return;
+        }
+        
+        this.initWebGL();
+        this.createTexture();
+        this.setupBuffers();
+    }
+
+    initWebGL() {
+        const gl = this.gl;
+        
+        // Vertex shader program
+        const vsSource = `
+            attribute vec4 aVertexPosition;
+            attribute vec2 aTextureCoord;
+            varying vec2 vTextureCoord;
+            void main() {
+                gl_Position = aVertexPosition;
+                vTextureCoord = aTextureCoord;
+            }
+        `;
+
+        // Fragment shader program
+        const fsSource = `
+            precision mediump float;
+            varying vec2 vTextureCoord;
+            uniform sampler2D uSampler;
+            void main() {
+                vec4 color = texture2D(uSampler, vTextureCoord);
+                gl_FragColor = vec4(color.r, color.r * 0.7, color.r * 0.3, 1.0);
+            }
+        `;
+
+        // Initialize shaders
+        const vertexShader = this.compileShader(gl, gl.VERTEX_SHADER, vsSource);
+        const fragmentShader = this.compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+        // Create shader program
+        this.program = gl.createProgram();
+        gl.attachShader(this.program, vertexShader);
+        gl.attachShader(this.program, fragmentShader);
+        gl.linkProgram(this.program);
+
+        if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
+            console.error('Shader program failed to link');
+            return;
+        }
+
+        // Get attribute locations
+        this.positionLocation = gl.getAttribLocation(this.program, 'aVertexPosition');
+        this.texcoordLocation = gl.getAttribLocation(this.program, 'aTextureCoord');
+    }
+
+    createTexture() {
+        const gl = this.gl;
+        
+        this.texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+
+        // Set texture parameters
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    }
+
+    setupBuffers() {
+        const gl = this.gl;
+        
+        // Create position buffer
+        const positions = new Float32Array([
+            -1.0, -1.0,
+             1.0, -1.0,
+            -1.0,  1.0,
+             1.0,  1.0,
+        ]);
+        
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+        // Create texture coordinate buffer
+        const texCoords = new Float32Array([
+            0.0, 1.0,
+            1.0, 1.0,
+            0.0, 0.0,
+            1.0, 0.0,
+        ]);
+        
+        const texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+
+        this.buffers = {
+            position: positionBuffer,
+            texCoord: texCoordBuffer
+        };
+    }
+
+    compileShader(gl, type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+            return null;
+        }
+
+        return shader;
+    }
+
+    updateTexture(data) {
+        const gl = this.gl;
+        
+        // Convert data to proper format for texture
+        const width = data.length;
+        const pixels = new Uint8Array(width);
+        for (let i = 0; i < width; i++) {
+            pixels[i] = Math.max(0, Math.min(255, (data[i] + 120) * 255 / 80));
+        }
+
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, width, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, pixels);
+    }
+
+    render() {
+        const gl = this.gl;
+
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.useProgram(this.program);
+
+        // Bind position buffer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
+        gl.enableVertexAttribArray(this.positionLocation);
+        gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+        // Bind texcoord buffer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
+        gl.enableVertexAttribArray(this.texcoordLocation);
+        gl.vertexAttribPointer(this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+        // Draw
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+}

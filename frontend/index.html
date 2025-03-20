@@ -116,7 +116,7 @@
             padding: 20px;
             border: 1px solid #444;
             border-radius: 5px;
-            width: 400px;
+            width: 800px; /* Increased width for KiwiSDR interface */
             color: white;
             font-family: monospace;
         }
@@ -338,6 +338,146 @@
         .signal-item.violation {
             background-color: rgba(231, 76, 60, 0.3);
         }
+
+        /* KiwiSDR specific styles */
+        #spectrum-container {
+            position: relative;
+            height: 200px;
+            background-color: #000;
+            margin-bottom: 15px;
+            border: 1px solid #444;
+        }
+
+        #tuning-container {
+            position: relative;
+            height: 80px;
+            margin-bottom: 15px;
+        }
+
+        #band-container {
+            height: 30px;
+            position: relative;
+        }
+
+        #scale-container {
+            height: 47px;
+            position: relative;
+        }
+
+        .waterfall-container {
+            height: 200px;
+            background-color: #000;
+            margin: 15px 0;
+            border: 1px solid #444;
+            position: relative;
+        }
+
+        .class-spectrum-dB {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .class-tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .class-tooltip-text {
+            visibility: hidden;
+            background-color: rgba(0,0,0,0.8);
+            color: #fff;
+            text-align: center;
+            padding: 5px;
+            border-radius: 3px;
+            position: absolute;
+            z-index: 100;
+            font-size: 12px;
+        }
+
+        .class-tooltip:hover .class-tooltip-text {
+            visibility: visible;
+        }
+
+        .mode-buttons {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            border-radius: 4px;
+            background-color: #2a2a2a;
+            color: #888;
+            cursor: pointer;
+            font-family: monospace;
+            transition: all 0.3s;
+        }
+
+        .mode-btn:hover {
+            background-color: #3a3a3a;
+            color: white;
+        }
+
+        .mode-btn.active {
+            background-color: #2a70a0;
+            color: white;
+        }
+
+        .freq-control {
+            display: flex;
+            gap: 10px;
+        }
+
+        .freq-control input {
+            flex: 1;
+        }
+
+        .freq-control select {
+            width: 200px;
+            padding: 8px;
+            background-color: #2a2a2a;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 4px;
+        }
+
+        .signal-controls {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .control-item {
+            background-color: #2a2a2a;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+
+        .control-item label {
+            display: block;
+            margin-bottom: 5px;
+            color: #888;
+        }
+
+        .control-item input[type="range"] {
+            width: 100%;
+        }
+
+        .passband-adjust-car,
+        .passband-adjust-cut {
+            position: absolute;
+            height: 100%;
+            cursor: ew-resize;
+            background-color: rgba(42, 112, 160, 0.2);
+            border: 1px solid #2a70a0;
+        }
     </style>
 </head>
 <body>
@@ -425,18 +565,106 @@
                 <h2>KiwiSDR Connection</h2>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label for="server_address">Server Address:</label>
-                    <input type="text" id="server_address" value="sdr.example.com">
+                <div id="spectrum-container">
+                    <div id="spectrum-dB" class="class-spectrum-dB class-tooltip">
+                        <span id="spectrum-dB-ttip" class="class-spectrum-dB-tooltip class-tooltip-text"></span>
+                    </div>
+                    <canvas id="spectrum-canvas"></canvas>
+                    <canvas id="spectrum-pb-canvas"></canvas>
+                    <canvas id="spectrum-af-canvas"></canvas>
                 </div>
-                <div class="form-group">
-                    <label for="port">Port:</label>
-                    <input type="number" id="port" value="8073">
+
+                <div id="tuning-container">
+                    <div id="band-container">
+                        <canvas id="band-canvas"></canvas>
+                        <div id="dx-container"></div>
+                    </div>
+                    <div id="scale-container">
+                        <canvas id="scale-canvas"></canvas>
+                        <div id="pb-adj-car" class="class-passband-adjust-car class-tooltip">
+                            <span id="pb-adj-car-ttip" class="class-passband-adjust-car-tooltip class-tooltip-text"></span>
+                        </div>
+                        <div id="pb-adj-lo" class="class-passband-adjust-cut class-tooltip">
+                            <span id="pb-adj-lo-ttip" class="class-passband-adjust-cut-tooltip class-tooltip-text"></span>
+                        </div>
+                        <div id="pb-adj-hi" class="class-passband-adjust-cut class-tooltip">
+                            <span id="pb-adj-hi-ttip" class="class-passband-adjust-cut-tooltip class-tooltip-text"></span>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="frequency">Frequency (kHz):</label>
-                    <input type="number" id="frequency" value="7100">
+
+                <div class="control-section">
+                    <div class="form-group control-mode">
+                        <div class="mode-buttons">
+                            <button class="mode-btn" data-mode="AM">AM</button>
+                            <button class="mode-btn" data-mode="SAM">SAM</button>
+                            <button class="mode-btn" data-mode="LSB">LSB</button>
+                            <button class="mode-btn" data-mode="USB">USB</button>
+                            <button class="mode-btn" data-mode="CW">CW</button>
+                            <button class="mode-btn" data-mode="NBFM">NBFM</button>
+                            <button class="mode-btn" data-mode="IQ">IQ</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="server_address">Server Address:</label>
+                        <input type="text" id="server_address" value="kiwisdr.example.com" placeholder="kiwisdr.example.com">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="port">Port:</label>
+                        <input type="number" id="port" value="8073" min="1" max="65535">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="frequency">Frequency (kHz):</label>
+                        <div class="freq-control">
+                            <input type="number" id="frequency" value="7100" min="0" step="0.1">
+                            <select id="band-select">
+                                <option value="" disabled>select band</option>
+                                <option value="630m">630m (0.472-0.479 MHz)</option>
+                                <option value="160m">160m (1.8-2.0 MHz)</option>
+                                <option value="80m">80m (3.5-4.0 MHz)</option>
+                                <option value="40m">40m (7.0-7.3 MHz)</option>
+                                <option value="30m">30m (10.1-10.15 MHz)</option>
+                                <option value="20m">20m (14.0-14.35 MHz)</option>
+                                <option value="17m">17m (18.068-18.168 MHz)</option>
+                                <option value="15m">15m (21.0-21.45 MHz)</option>
+                                <option value="12m">12m (24.89-24.99 MHz)</option>
+                                <option value="10m">10m (28.0-29.7 MHz)</option>
+                                <option value="6m">6m (50-54 MHz)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Signal Controls:</label>
+                        <div class="signal-controls">
+                            <div class="control-item">
+                                <label for="volume">Volume:</label>
+                                <input type="range" id="volume" min="0" max="100" value="50">
+                            </div>
+                            <div class="control-item">
+                                <label for="squelch">Squelch:</label>
+                                <input type="range" id="squelch" min="0" max="100" value="0">
+                            </div>
+                            <div class="control-item"></div>
+                                <label for="agc">AGC:</label>
+                                <select id="agc">
+                                    <option value="off">Off</option>
+                                    <option value="slow">Slow</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="fast">Fast</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                <div class="waterfall-container">
+                    <canvas id="waterfall-canvas"></canvas>
+                </div>
+
                 <pre id="kiwisdr-status"></pre>
             </div>
             <div class="modal-footer">
@@ -446,7 +674,7 @@
             </div>
         </div>
     </div>
-
+    
     <!-- WebSDR Modal -->
     <div id="websdr-modal" class="modal">
         <div class="modal-content">

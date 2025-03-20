@@ -5,6 +5,7 @@ const WebSocket = require("ws");
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
+const EventEmitter = require('events');
 
 // Configuration for WebSDR integration
 const WEBSDR_CONFIG = {
@@ -168,6 +169,118 @@ class WebSDRManager {
     }
 }
 
+// KiwiSDR WebSocket integration
+class KiwiSDRManager extends EventEmitter {
+    constructor() {
+        super();
+        this.socket = null;
+        this.isConnected = false;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+        this.reconnectInterval = 5000;
+        this.pendingCommands = [];
+    }
+
+    connect(config) {
+        if (!this.validateConfig(config)) {
+            throw new Error('Invalid KiwiSDR configuration');
+        }
+
+        try {
+            this.socket = new WebSocket(`ws://${config.server}:${config.port}/kiwi`);
+            
+            this.socket.onopen = () => {
+                console.log('Connected to KiwiSDR');
+                this.isConnected = true;
+                this.reconnectAttempts = 0;
+                this.emit('connect');
+                
+                // Send any pending commands
+                while (this.pendingCommands.length > 0) {
+                    const cmd = this.pendingCommands.shift();
+                    this.sendCommand(cmd);
+                }
+                
+                // Set initial parameters
+                this.sendCommand({ type: 'mode', value: 'AM' });
+                this.sendCommand({ type: 'frequency', value: config.frequency });
+            };
+            
+            this.socket.onmessage = (event) => {
+                this.emit('data', event.data);
+            };
+            
+            this.socket.onclose = () => {
+                console.log('KiwiSDR connection closed');
+                this.isConnected = false;
+                this.emit('close');
+                this.scheduleReconnect(config);
+            };
+            
+            this.socket.onerror = (error) => {
+                console.error('KiwiSDR connection error:', error);
+                this.isConnected = false;
+                this.emit('error', error);
+            };
+            
+            return true;
+        } catch (error) {
+            console.error('Failed to connect to KiwiSDR:', error);
+            this.emit('error', error);
+            return false;
+        }
+    }
+
+    validateConfig(config) {
+        return (
+            config &&
+            typeof config.server === 'string' &&
+            typeof config.port === 'number' &&
+            config.port > 0 &&
+            config.port < 65536 &&
+            typeof config.frequency === 'number' &&
+            config.frequency > 0
+        );
+    }
+
+    scheduleReconnect(config) {
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.log('Max reconnection attempts reached');
+            return;
+        }
+
+        this.reconnectAttempts++;
+        console.log(`Scheduling reconnect attempt ${this.reconnectAttempts}...`);
+        setTimeout(() => this.connect(config), this.reconnectInterval);
+    }
+
+    sendCommand(command) {
+        if (!this.isConnected || !this.socket) {
+            console.log('Not connected, queueing command');
+            this.pendingCommands.push(command);
+            return false;
+        }
+
+        try {
+            this.socket.send(JSON.stringify(command));
+            return true;
+        } catch (error) {
+            console.error('Error sending command:', error);
+            return false;
+        }
+    }
+
+    disconnect() {
+        if (this.socket) {
+            this.socket.close();
+            this.socket = null;
+        }
+        this.isConnected = false;
+        this.pendingCommands = [];
+        this.emit('disconnect');
+    }
+}
+
 // Function to extend the existing relay server with WebSDR support
 function addWebSDRSupport(app, wss) {
     // Create WebSDR manager
@@ -206,7 +319,8 @@ function addWebSDRSupport(app, wss) {
 
 // If this is included as a module:
 module.exports = {
-    addWebSDRSupport
+    addWebSDRSupport,
+    KiwiSDRManager
 };
 
 /* 
