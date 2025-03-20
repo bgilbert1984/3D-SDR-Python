@@ -134,6 +134,30 @@ The system uses a multi-layer communication approach:
 - Optional GPU-accelerated visualization using Fosphor when available
 - Fallback to standard visualization methods when GPU acceleration is unavailable
 
+## Testing
+
+This project includes unit tests for both Python and JavaScript components. To run the tests:
+
+### Python Tests
+1. Install the required dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Run the tests using `pytest`:
+   ```bash
+   pytest tests/python
+   ```
+
+### JavaScript Tests
+1. Install Node.js dependencies:
+   ```bash
+   npm install
+   ```
+2. Run the tests using `jest`:
+   ```bash
+   npm test
+   ```
+
 ## License
 
 This project is licensed under the MIT License
