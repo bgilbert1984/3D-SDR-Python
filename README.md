@@ -1,4 +1,4 @@
-see more @ ti.pics
+see more @ arapt.us
 dualwolf4d@gmail.com
 
 # SDR Drone Pursuit System
